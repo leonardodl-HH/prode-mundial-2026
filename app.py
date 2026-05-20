@@ -333,7 +333,7 @@ st.markdown("Bienvenido al centro de estadísticas. Carga tus pronósticos y sig
 tabs = st.tabs(["📊 Posiciones y Apuestas", "📤 Subir Mis Apuestas", "⚙️ Panel Administrador"])
 
 # ==========================================
-# TAB 1: DASHBOARD PÚBLICO (REDISEÑADA COMPLETA)
+# TAB 1: DASHBOARD PÚBLICO
 # ==========================================
 with tabs[0]:
     cfg = DatabaseManager.get_config()
@@ -361,7 +361,6 @@ with tabs[0]:
             
     st.markdown("---")
     
-    # --- PANTALLA DIVIDIDA: POSICIONES VS RESULTADOS REALES ---
     col1, col2 = st.columns([1, 1.2])
     
     with col1:
@@ -374,7 +373,12 @@ with tabs[0]:
         st.subheader("📅 Fixture y Resultados Oficiales")
         df_public_partidos = DatabaseManager.get_partidos_con_nombres()
         if not df_public_partidos.empty:
-            st.dataframe(df_public_partidos, use_container_width=True, hide_index=True, column_config={
+            # --- NUEVO MEJORADO: DISEÑO GRÁFICO AGRUPADOR DE GRUPOS REALES ---
+            fases_unicas = df_public_partidos['Fase'].unique()
+            fase_colors = {fase: 'rgba(30, 144, 255, 0.12)' if idx % 2 == 0 else 'rgba(0, 0, 0, 0)' for idx, fase in enumerate(fases_unicas)}
+            styled_df = df_public_partidos.style.apply(lambda r: [f"background-color: {fase_colors.get(r['Fase'], '')}" for _ in r], axis=1)
+            
+            st.dataframe(styled_df, use_container_width=True, hide_index=True, column_config={
                 " ": st.column_config.ImageColumn(label=""),
                 "  ": st.column_config.ImageColumn(label=""),
                 "[GL Real]": st.column_config.NumberColumn(label="GL"),
@@ -383,15 +387,20 @@ with tabs[0]:
         else:
             st.info("El fixture todavía no fue generado por el administrador.")
 
-    # --- CONSULTA DE APUESTAS ABAJO COMPLETO ---
     st.markdown("---")
-    st.subheader("🔍 Espiar Apuestas de los Competidores")
+    st.subheader("🔍 Apuestas")
     usuarios = DatabaseManager.get_usuarios()
     if usuarios:
         user_sel = st.selectbox("Selecciona un competidor para desplegar su juego completo:", usuarios)
         if user_sel:
             df_user_ap = DatabaseManager.get_apuestas_usuario_web(user_sel)
-            st.dataframe(df_user_ap, use_container_width=True, hide_index=True, column_config={
+            
+            # --- DISEÑO MEJORADO TAMBIÉN EN LA VISTA INDIVIDUAL DE USUARIO ---
+            fases_usr = df_user_ap['Fase'].unique()
+            colors_usr = {fase: 'rgba(30, 144, 255, 0.12)' if idx % 2 == 0 else 'rgba(0, 0, 0, 0)' for idx, fase in enumerate(fases_usr)}
+            styled_user_df = df_user_ap.style.apply(lambda r: [f"background-color: {colors_usr.get(r['Fase'], '')}" for _ in r], axis=1)
+            
+            st.dataframe(styled_user_df, use_container_width=True, hide_index=True, column_config={
                 " ": st.column_config.ImageColumn(label=""),
                 "  ": st.column_config.ImageColumn(label="")
             })
@@ -533,7 +542,6 @@ with tabs[2]:
                 
                 r_idx = 4
                 for _, row in df_auditoria.iterrows():
-                    # Convierte con seguridad para evitar errores por campos vacíos
                     try:
                         al, av = int(row['Al']), int(row['Av'])
                         rl, rv = int(row['Rl']), int(row['Rv'])
@@ -749,7 +757,13 @@ with tabs[2]:
         st.markdown("---")
         st.subheader("### Grilla de Partidos Actuales")
         df_adm_partidos = DatabaseManager.get_partidos_con_nombres()
-        st.dataframe(df_adm_partidos, use_container_width=True, hide_index=True, column_config={
+        
+        # --- DISEÑO AGRUPADOR TAMBIÉN EN LA SECCIÓN INFERIOR DEL PANEL ADMIN ---
+        fases_adm = df_adm_partidos['Fase'].unique()
+        fase_colors_adm = {fase: 'rgba(30, 144, 255, 0.12)' if idx % 2 == 0 else 'rgba(0, 0, 0, 0)' for idx, fase in enumerate(fases_adm)}
+        styled_adm_df = df_adm_partidos.style.apply(lambda r: [f"background-color: {fase_colors_adm.get(r['Fase'], '')}" for _ in r], axis=1)
+        
+        st.dataframe(styled_adm_df, use_container_width=True, hide_index=True, column_config={
             " ": st.column_config.ImageColumn(label=""),
             "  ": st.column_config.ImageColumn(label="")
         })
