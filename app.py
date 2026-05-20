@@ -27,7 +27,7 @@ class DatabaseManager:
         cursor.execute('''CREATE TABLE IF NOT EXISTS apuestas (id_apuesta INTEGER PRIMARY KEY AUTOINCREMENT, id_usuario INTEGER, id_partido INTEGER, apuesta_goles_local INTEGER DEFAULT NULL, apuesta_goles_visitante INTEGER DEFAULT NULL, equipo_l_predicho TEXT, equipo_v_predicho TEXT, puntos_obtenidos REAL DEFAULT 0.0, FOREIGN KEY(id_usuario) REFERENCES usuarios(id_usuario), FOREIGN KEY(id_partido) REFERENCES partidos(id_partido), UNIQUE(id_usuario, id_partido))''')
         cursor.execute('''CREATE TABLE IF NOT EXISTS configuracion (id INTEGER PRIMARY KEY, pts_prode INTEGER, pts_exacto INTEGER, pts_parcial INTEGER, pts_dif INTEGER, api_key TEXT, id_liga TEXT, admin_pass TEXT)''')
         
-        # Migraciones automáticas de campos
+        # Migraciones de columnas de la segunda vuelta
         try: cursor.execute("ALTER TABLE configuracion ADD COLUMN pts_prode_ko INTEGER DEFAULT 8")
         except: pass
         try: cursor.execute("ALTER TABLE configuracion ADD COLUMN pts_exacto_ko INTEGER DEFAULT 6")
@@ -41,7 +41,7 @@ class DatabaseManager:
         if cursor.fetchone()[0] == 0:
             cursor.execute("INSERT INTO configuracion (id, pts_prode, pts_exacto, pts_parcial, pts_dif, api_key, id_liga, admin_pass, pts_prode_ko, pts_exacto_ko, pts_parcial_ko, pts_dif_ko) VALUES (1, 4, 3, 1, 1, '', '1', 'admin123', 8, 6, 2, 2)")
         
-        # --- MIGRACIÓN ACTIVA DE BANDERAS HD ---
+        # Configuración de URLs para las banderas de FlagCDN
         iso_mapping = {
             "México": "mx", "Estados Unidos": "us", "Canadá": "ca", "Costa Rica": "cr",
             "Argentina": "ar", "Brasil": "br", "Uruguay": "uy", "Colombia": "co",
@@ -159,7 +159,6 @@ class DatabaseManager:
         conn.commit()
         conn.close()
 
-    # --- CAMBIO: INCLUYE COLUMNAS DE URL DE BANDERAS LOCAL/VISITANTE ---
     @staticmethod
     def get_partidos_con_nombres():
         conn = DatabaseManager.get_connection()
@@ -261,7 +260,6 @@ class DatabaseManager:
         conn.close()
         return df_rank
 
-    # --- CAMBIO: EXTRAE BANDERAS PARA EL "ESPÍA" DE JUEGOS ---
     @staticmethod
     def get_apuestas_usuario_web(nombre_usuario):
         conn = DatabaseManager.get_connection()
@@ -284,7 +282,7 @@ class DatabaseManager:
             JOIN equipos ev ON p.id_equipo_visitante = ev.id_equipo
             WHERE u.nombre = ?
         '''
-        df = pd.read_sql_query(query, conn)
+        df = pd.read_sql_query(query, conn, params=(nombre_usuario,))
         conn.close()
         return df
 
@@ -309,7 +307,7 @@ class DatabaseManager:
         conn.close()
         return df
 
-# --- INICIALIZACIÓN ---
+# --- CONTROLADORES DE INTERFAZ ---
 DatabaseManager.init_db()
 
 st.title("🏆 Prode Mundial 2026 — Dashboard en Vivo")
@@ -359,7 +357,6 @@ with tabs[0]:
             user_sel = st.selectbox("Selecciona un competidor para desplegar su juego:", usuarios)
             if user_sel:
                 df_user_ap = DatabaseManager.get_apuestas_usuario_web(user_sel)
-                # --- CAMBIO: CONFIGURACIÓN PARA RENDERIZAR LAS IMÁGENES DE LAS BANDERAS ---
                 st.dataframe(df_user_ap, use_container_width=True, hide_index=True, column_config={
                     " ": st.column_config.ImageColumn(label=""),
                     "  ": st.column_config.ImageColumn(label="")
@@ -619,5 +616,30 @@ with tabs[2]:
             p_parc = st.number_input("Pts Goles de un Equipo", value=cfg[2])
             p_dif = st.number_input("Pts Diferencia de Goles", value=cfg[3])
             
+            # --- LÍNEAS CORREGIDAS COMPLETAMENTE ABAJO ---
             st.markdown("##### ⚔️ Puntos en Segunda Vuelta (Eliminación)")
-            p_prode_ko = st.number_input("Pts Ganador KO", value=cfg
+            p_prode_ko = st.number_input("Pts Ganador KO", value=cfg[7])
+            p_exact_ko = st.number_input("Pts Resultado Exacto KO", value=cfg[8])
+            p_parc_ko = st.number_input("Pts Goles de un Equipo KO", value=cfg[9])
+            p_dif_ko = st.number_input("Pts Diferencia de Goles KO", value=cfg[10])
+            
+            st.markdown("##### 🔑 Credenciales y Llaves")
+            ak = st.text_input("API Key de API-Football:", value=cfg[4])
+            id_l = st.text_input("ID de la Liga/Mundial:", value=cfg[5])
+            new_pass = st.text_input("Nueva Clave Admin:", value=cfg[6])
+            
+            if st.button("Guardar Cambios de Configuración"):
+                DatabaseManager.set_config(p_prode, p_exact, p_parc, p_dif, ak, id_l, new_pass, p_prode_ko, p_exact_ko, p_parc_ko, p_dif_ko)
+                st.success("Configuración guardada con éxito.")
+                st.rerun()
+                
+        st.markdown("---")
+        st.subheader("### Grilla de Partidos Actuales")
+        df_adm_partidos = DatabaseManager.get_partidos_con_nombres()
+        st.dataframe(df_adm_partidos, use_container_width=True, hide_index=True, column_config={
+            " ": st.column_config.ImageColumn(label=""),
+            "  ": st.column_config.ImageColumn(label="")
+        })
+    else:
+        if pass_input:
+            st.error("Contraseña incorrecta.")
