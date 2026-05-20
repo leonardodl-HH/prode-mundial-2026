@@ -6,6 +6,7 @@ import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 import io
 import os
+from datetime import datetime
 
 DB_NAME = "prode_portable.db"
 
@@ -37,9 +38,13 @@ class DatabaseManager:
         try: cursor.execute("ALTER TABLE configuracion ADD COLUMN pts_dif_ko INTEGER DEFAULT 2")
         except: pass
         
+        # --- MIGRACIÓN: COLUMNA DE FECHA LÍMITE ---
+        try: cursor.execute("ALTER TABLE configuracion ADD COLUMN fecha_limite TEXT DEFAULT '2026-06-11 16:00:00'")
+        except: pass
+        
         cursor.execute("SELECT COUNT(*) FROM configuracion")
         if cursor.fetchone()[0] == 0:
-            cursor.execute("INSERT INTO configuracion (id, pts_prode, pts_exacto, pts_parcial, pts_dif, api_key, id_liga, admin_pass, pts_prode_ko, pts_exacto_ko, pts_parcial_ko, pts_dif_ko) VALUES (1, 4, 3, 1, 1, '', '1', 'admin123', 8, 6, 2, 2)")
+            cursor.execute("INSERT INTO configuracion (id, pts_prode, pts_exacto, pts_parcial, pts_dif, api_key, id_liga, admin_pass, pts_prode_ko, pts_exacto_ko, pts_parcial_ko, pts_dif_ko, fecha_limite) VALUES (1, 4, 3, 1, 1, '', '1', 'admin123', 8, 6, 2, 2, '2026-06-11 16:00:00')")
         
         # Configuración de URLs para las banderas independientes de FlagCDN
         iso_mapping = {
@@ -66,16 +71,16 @@ class DatabaseManager:
     def get_config():
         conn = DatabaseManager.get_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT pts_prode, pts_exacto, pts_parcial, pts_dif, api_key, id_liga, admin_pass, pts_prode_ko, pts_exacto_ko, pts_parcial_ko, pts_dif_ko FROM configuracion WHERE id = 1")
+        cursor.execute("SELECT pts_prode, pts_exacto, pts_parcial, pts_dif, api_key, id_liga, admin_pass, pts_prode_ko, pts_exacto_ko, pts_parcial_ko, pts_dif_ko, fecha_limite FROM configuracion WHERE id = 1")
         datos = cursor.fetchone()
         conn.close()
         return datos
 
     @staticmethod
-    def set_config(p_prode, p_exact, p_parcial, p_dif, api_key, id_liga, admin_pass, p_prode_ko, p_exact_ko, p_parcial_ko, p_dif_ko):
+    def set_config(p_prode, p_exact, p_parcial, p_dif, api_key, id_liga, admin_pass, p_prode_ko, p_exact_ko, p_parcial_ko, p_dif_ko, fecha_limite):
         conn = DatabaseManager.get_connection()
         cursor = conn.cursor()
-        cursor.execute("UPDATE configuracion SET pts_prode=?, pts_exacto=?, pts_parcial=?, pts_dif=?, api_key=?, id_liga=?, admin_pass=?, pts_prode_ko=?, pts_exacto_ko=?, pts_parcial_ko=?, pts_dif_ko=? WHERE id=1", (p_prode, p_exact, p_parcial, p_dif, api_key, id_liga, admin_pass, p_prode_ko, p_exact_ko, p_parcial_ko, p_dif_ko))
+        cursor.execute("UPDATE configuracion SET pts_prode=?, pts_exacto=?, pts_parcial=?, pts_dif=?, api_key=?, id_liga=?, admin_pass=?, pts_prode_ko=?, pts_exacto_ko=?, pts_parcial_ko=?, pts_dif_ko=?, fecha_limite=? WHERE id=1", (p_prode, p_exact, p_parcial, p_dif, api_key, id_liga, admin_pass, p_prode_ko, p_exact_ko, p_parcial_ko, p_dif_ko, fecha_limite))
         conn.commit()
         conn.close()
 
@@ -373,7 +378,6 @@ with tabs[0]:
         st.subheader("📅 Fixture y Resultados Oficiales")
         df_public_partidos = DatabaseManager.get_partidos_con_nombres()
         if not df_public_partidos.empty:
-            # --- NUEVO MEJORADO: DISEÑO GRÁFICO AGRUPADOR DE GRUPOS REALES ---
             fases_unicas = df_public_partidos['Fase'].unique()
             fase_colors = {fase: 'rgba(30, 144, 255, 0.12)' if idx % 2 == 0 else 'rgba(0, 0, 0, 0)' for idx, fase in enumerate(fases_unicas)}
             styled_df = df_public_partidos.style.apply(lambda r: [f"background-color: {fase_colors.get(r['Fase'], '')}" for _ in r], axis=1)
@@ -389,23 +393,30 @@ with tabs[0]:
 
     st.markdown("---")
     st.subheader("🔍 Apuestas")
-    usuarios = DatabaseManager.get_usuarios()
-    if usuarios:
-        user_sel = st.selectbox("Selecciona un competidor para desplegar su juego completo:", usuarios)
-        if user_sel:
-            df_user_ap = DatabaseManager.get_apuestas_usuario_web(user_sel)
-            
-            # --- DISEÑO MEJORADO TAMBIÉN EN LA VISTA INDIVIDUAL DE USUARIO ---
-            fases_usr = df_user_ap['Fase'].unique()
-            colors_usr = {fase: 'rgba(30, 144, 255, 0.12)' if idx % 2 == 0 else 'rgba(0, 0, 0, 0)' for idx, fase in enumerate(fases_usr)}
-            styled_user_df = df_user_ap.style.apply(lambda r: [f"background-color: {colors_usr.get(r['Fase'], '')}" for _ in r], axis=1)
-            
-            st.dataframe(styled_user_df, use_container_width=True, hide_index=True, column_config={
-                " ": st.column_config.ImageColumn(label=""),
-                "  ": st.column_config.ImageColumn(label="")
-            })
+    
+    # --- CAMBIO CRÍTICO: EVALUACIÓN DE CANDADO ANTI-COPIAS ---
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    fecha_limite_str = cfg[11]
+    
+    if now_str >= fecha_limite_str:
+        usuarios = DatabaseManager.get_usuarios()
+        if usuarios:
+            user_sel = st.selectbox("Selecciona un competidor para desplegar su juego completo:", usuarios)
+            if user_sel:
+                df_user_ap = DatabaseManager.get_apuestas_usuario_web(user_sel)
+                fases_usr = df_user_ap['Fase'].unique()
+                colors_usr = {fase: 'rgba(30, 144, 255, 0.12)' if idx % 2 == 0 else 'rgba(0, 0, 0, 0)' for idx, fase in enumerate(fases_usr)}
+                styled_user_df = df_user_ap.style.apply(lambda r: [f"background-color: {colors_usr.get(r['Fase'], '')}" for _ in r], axis=1)
+                
+                st.dataframe(styled_user_df, use_container_width=True, hide_index=True, column_config={
+                    " ": st.column_config.ImageColumn(label=""),
+                    "  ": st.column_config.ImageColumn(label="")
+                })
+        else:
+            st.info("Aún no hay usuarios cargados en el sistema.")
     else:
-        st.info("Aún no hay usuarios cargados en el sistema.")
+        # Cartel preventivo de bloqueo
+        st.warning(f"🔒 **Pronósticos Protegidos:** Las apuestas de todos los jugadores se encuentran encriptadas y ocultas hasta el **{fecha_limite_str}** para garantizar que ningún participante pueda copiarse del juego de otro. ¡Mucha suerte!")
 
 # ==========================================
 # TAB 2: USER CARGA APUESTAS
@@ -493,9 +504,7 @@ with tabs[1]:
     else:
         st.warning("El administrador aún no ha generado el fixture del torneo.")
 
-# ==========================================
-# TAB 3: ADMIN PANEL (PROTEGIDO)
-# ==========================================
+# --- PANEL ADMIN PROT ---
 with tabs[2]:
     cfg = DatabaseManager.get_config()
     pass_input = st.text_input("Ingresa la Contraseña de Administrador:", type="password")
@@ -598,10 +607,6 @@ with tabs[2]:
                 st.caption("El informe de desglose de puntos estará disponible cuando ruede la pelota.")
         
         st.markdown("---")
-        
-        # =========================================================
-        # SECCIÓN CARGA DE RESULTADOS (API VS EXCEL)
-        # =========================================================
         st.markdown("### 🔄 Carga de Resultados Oficiales del Torneo")
         st.write("Elegí el método para cargar los goles reales de los partidos. La API es la prioridad y pisará siempre los datos, pero tenés el bloque de contingencia manual en Excel abajo.")
         
@@ -744,13 +749,16 @@ with tabs[2]:
             p_parc_ko = st.number_input("Pts Goles de un Equipo KO", value=cfg[9])
             p_dif_ko = st.number_input("Pts Diferencia de Goles KO", value=cfg[10])
             
-            st.markdown("##### 🔑 Credenciales y Llaves")
+            st.markdown("##### 🔑 Credenciales, Llaves y Fechas")
             ak = st.text_input("API Key de API-Football:", value=cfg[4])
             id_l = st.text_input("ID de la Liga/Mundial:", value=cfg[5])
+            
+            # --- NUEVA ENTRADA DE FECHA LÍMITE ---
+            f_limite = st.text_input("Fecha límite de revelación (Formato AAAA-MM-DD HH:MM:SS):", value=cfg[11])
             new_pass = st.text_input("Nueva Clave Admin:", value=cfg[6])
             
             if st.button("Guardar Cambios de Configuración", use_container_width=True):
-                DatabaseManager.set_config(p_prode, p_exact, p_parc, p_dif, ak, id_l, new_pass, p_prode_ko, p_exact_ko, p_parc_ko, p_dif_ko)
+                DatabaseManager.set_config(p_prode, p_exact, p_parc, p_dif, ak, id_l, new_pass, p_prode_ko, p_exact_ko, p_parc_ko, p_dif_ko, f_limite)
                 st.success("Configuración guardada con éxito.")
                 st.rerun()
                 
@@ -758,7 +766,6 @@ with tabs[2]:
         st.subheader("### Grilla de Partidos Actuales")
         df_adm_partidos = DatabaseManager.get_partidos_con_nombres()
         
-        # --- DISEÑO AGRUPADOR TAMBIÉN EN LA SECCIÓN INFERIOR DEL PANEL ADMIN ---
         fases_adm = df_adm_partidos['Fase'].unique()
         fase_colors_adm = {fase: 'rgba(30, 144, 255, 0.12)' if idx % 2 == 0 else 'rgba(0, 0, 0, 0)' for idx, fase in enumerate(fases_adm)}
         styled_adm_df = df_adm_partidos.style.apply(lambda r: [f"background-color: {fase_colors_adm.get(r['Fase'], '')}" for _ in r], axis=1)
