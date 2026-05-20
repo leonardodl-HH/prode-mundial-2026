@@ -198,7 +198,6 @@ class DatabaseManager:
         conn.commit()
         conn.close()
 
-    # --- NUEVA FUNCIÓN: CARGA MANUAL DE GANADORES DESDE EXCEL DE CONTINGENCIA ---
     @staticmethod
     def importar_resultados_excel_admin(df):
         conn = DatabaseManager.get_connection()
@@ -478,6 +477,9 @@ with tabs[2]:
     if pass_input == cfg[6]:
         st.success("Acceso Administrador Autorizado")
         
+        # --- SOLUCIÓN DEL NAMEERROR: DECLARACIÓN GLOBAL DE BORDES AL ENTRAR AL PANEL ADMIN ---
+        thin_b = Border(left=Side(style='thin', color='D3D3D3'), right=Side(style='thin', color='D3D3D3'), top=Side(style='thin', color='D3D3D3'), bottom=Side(style='thin', color='D3D3D3'))
+        
         st.markdown("### 💾 Respaldo e Informes de Auditoría")
         c_seg1, c_seg2, c_seg3 = st.columns(3)
         with c_seg1:
@@ -505,7 +507,6 @@ with tabs[2]:
                 ws_aud.row_dimensions[1].height = 35
                 
                 headers_aud = ['Competidor', 'Fase', 'Partido', 'Pronóstico', 'Resultado Real', 'Pts Ganador', 'Pts Exacto', 'Pts Goles', 'Pts Diferencia', 'Total Partido']
-                thin_b = Border(left=Side(style='thin', color='D3D3D3'), right=Side(style='thin', color='D3D3D3'), top=Side(style='thin', color='D3D3D3'), bottom=Side(style='thin', color='D3D3D3'))
                 
                 for col_idx, h in enumerate(headers_aud, 1):
                     cell = ws_aud.cell(row=3, column=col_idx, value=h)
@@ -569,7 +570,7 @@ with tabs[2]:
         st.markdown("---")
         
         # =========================================================
-        # SECCIÓN REDISEÑADA: CARGA DE RESULTADOS (API VS EXCEL)
+        # SECCIÓN CARGA DE RESULTADOS (API VS EXCEL)
         # =========================================================
         st.markdown("### 🔄 Carga de Resultados Oficiales del Torneo")
         st.write("Elegí el método para cargar los goles reales de los partidos. La API es la prioridad y pisará siempre los datos, pero tenés el bloque de contingencia manual en Excel abajo.")
@@ -633,7 +634,6 @@ with tabs[2]:
                     ws_adm_res.cell(row=row_n, column=2, value=r['Fase']).alignment = Alignment(horizontal="center")
                     ws_adm_res.cell(row=row_n, column=3, value=r['Local']).alignment = Alignment(horizontal="left")
                     
-                    # Conserva goles ya cargados para facilitar actualización
                     gl_val = "" if pd.isna(r['goles_local']) else int(r['goles_local'])
                     gv_val = "" if pd.isna(r['goles_visitante']) else int(r['goles_visitante'])
                     
