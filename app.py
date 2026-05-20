@@ -26,9 +26,20 @@ class DatabaseManager:
         cursor.execute('''CREATE TABLE IF NOT EXISTS usuarios (id_usuario INTEGER PRIMARY KEY AUTOINCREMENT, nombre TEXT UNIQUE NOT NULL)''')
         cursor.execute('''CREATE TABLE IF NOT EXISTS apuestas (id_apuesta INTEGER PRIMARY KEY AUTOINCREMENT, id_usuario INTEGER, id_partido INTEGER, apuesta_goles_local INTEGER DEFAULT NULL, apuesta_goles_visitante INTEGER DEFAULT NULL, equipo_l_predicho TEXT, equipo_v_predicho TEXT, puntos_obtenidos REAL DEFAULT 0.0, FOREIGN KEY(id_usuario) REFERENCES usuarios(id_usuario), FOREIGN KEY(id_partido) REFERENCES partidos(id_partido), UNIQUE(id_usuario, id_partido))''')
         cursor.execute('''CREATE TABLE IF NOT EXISTS configuracion (id INTEGER PRIMARY KEY, pts_prode INTEGER, pts_exacto INTEGER, pts_parcial INTEGER, pts_dif INTEGER, api_key TEXT, id_liga TEXT, admin_pass TEXT)''')
+        
+        # --- MIGRACIÓN AUTOMÁTICA SEGUNDA VUELTA ---
+        try: cursor.execute("ALTER TABLE configuracion ADD COLUMN pts_prode_ko INTEGER DEFAULT 8")
+        except: pass
+        try: cursor.execute("ALTER TABLE configuracion ADD COLUMN pts_exacto_ko INTEGER DEFAULT 6")
+        except: pass
+        try: cursor.execute("ALTER TABLE configuracion ADD COLUMN pts_parcial_ko INTEGER DEFAULT 2")
+        except: pass
+        try: cursor.execute("ALTER TABLE configuracion ADD COLUMN pts_dif_ko INTEGER DEFAULT 2")
+        except: pass
+        
         cursor.execute("SELECT COUNT(*) FROM configuracion")
         if cursor.fetchone()[0] == 0:
-            cursor.execute("INSERT INTO configuracion (id, pts_prode, pts_exacto, pts_parcial, pts_dif, api_key, id_liga, admin_pass) VALUES (1, 4, 3, 1, 1, '', '1', 'admin123')")
+            cursor.execute("INSERT INTO configuracion (id, pts_prode, pts_exacto, pts_parcial, pts_dif, api_key, id_liga, admin_pass, pts_prode_ko, pts_exacto_ko, pts_parcial_ko, pts_dif_ko) VALUES (1, 4, 3, 1, 1, '', '1', 'admin123', 8, 6, 2, 2)")
         conn.commit()
         conn.close()
 
@@ -36,16 +47,16 @@ class DatabaseManager:
     def get_config():
         conn = DatabaseManager.get_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT pts_prode, pts_exacto, pts_parcial, pts_dif, api_key, id_liga, admin_pass FROM configuracion WHERE id = 1")
+        cursor.execute("SELECT pts_prode, pts_exacto, pts_parcial, pts_dif, api_key, id_liga, admin_pass, pts_prode_ko, pts_exacto_ko, pts_parcial_ko, pts_dif_ko FROM configuracion WHERE id = 1")
         datos = cursor.fetchone()
         conn.close()
         return datos
 
     @staticmethod
-    def set_config(p_prode, p_exacto, p_parcial, p_dif, api_key, id_liga, admin_pass):
+    def set_config(p_prode, p_exact, p_parcial, p_dif, api_key, id_liga, admin_pass, p_prode_ko, p_exact_ko, p_parcial_ko, p_dif_ko):
         conn = DatabaseManager.get_connection()
         cursor = conn.cursor()
-        cursor.execute("UPDATE configuracion SET pts_prode=?, pts_exacto=?, pts_parcial=?, pts_dif=?, api_key=?, id_liga=?, admin_pass=? WHERE id=1", (p_prode, p_exacto, p_parcial, p_dif, api_key, id_liga, admin_pass))
+        cursor.execute("UPDATE configuracion SET pts_prode=?, pts_exacto=?, pts_parcial=?, pts_dif=?, api_key=?, id_liga=?, admin_pass=?, pts_prode_ko=?, pts_exacto_ko=?, pts_parcial_ko=?, pts_dif_ko=? WHERE id=1", (p_prode, p_exact, p_parcial, p_dif, api_key, id_liga, admin_pass, p_prode_ko, p_exact_ko, p_parcial_ko, p_dif_ko))
         conn.commit()
         conn.close()
 
@@ -181,24 +192,33 @@ class DatabaseManager:
     def calcular_ranking_avanzado():
         conn = DatabaseManager.get_connection()
         cursor = conn.cursor()
+        cursor.execute("SELECT pts_prode, pts_exacto, pts_parcial, pts_dif, pts_prode_ko, pts_exacto_ko, pts_parcial_ko, pts_dif_ko FROM configuracion WHERE id = 1")
+        cfg_pts = cursor.fetchone()
+        
         cursor.execute('''SELECT p.id_partido, p.fase, el.nombre, ev.nombre, p.goles_local, p.goles_visitante FROM partidos p JOIN equipos el ON p.id_equipo_local = el.id_equipo JOIN equipos ev ON p.id_equipo_visitante = ev.id_equipo WHERE p.goles_local IS NOT NULL''')
         partidos_jugados = cursor.fetchall()
+        
         for id_partido, fase, real_l_nombre, real_v_nombre, real_l_gol, real_v_gol in partidos_jugados:
             cursor.execute("SELECT id_usuario, apuesta_goles_local, apuesta_goles_visitante, equipo_l_predicho, equipo_v_predicho FROM apuestas WHERE id_partido = ? AND apuesta_goles_local IS NOT NULL", (id_partido,))
             apuestas = cursor.fetchall()
             res_real = 1 if real_l_gol > real_v_gol else (0 if real_l_gol == real_v_gol else -1)
+            
+            # Divide regla de puntos si es grupos o eliminación
+            if "Grupo" in fase:
+                pt_p, pt_ex, pt_pa, pt_df = float(cfg_pts[0]), float(cfg_pts[1]), float(cfg_pts[2]), float(cfg_pts[3])
+            else:
+                pt_p, pt_ex, pt_pa, pt_df = float(cfg_pts[4]), float(cfg_pts[5]), float(cfg_pts[6]), float(cfg_pts[7])
+                
             for id_user, ap_l_gol, ap_v_gol, ap_l_nombre, ap_v_nombre in apuestas:
-                puntos_totales = 0.0
                 res_ap = 1 if ap_l_gol > ap_v_gol else (0 if ap_l_gol == ap_v_gol else -1)
                 puntos_base = 0.0
                 if res_real == res_ap:
-                    puntos_base += 4.0
-                    if real_l_gol == ap_l_gol and real_v_gol == ap_v_gol: puntos_base += 3.0
+                    puntos_base += pt_p
+                    if real_l_gol == ap_l_gol and real_v_gol == ap_v_gol: puntos_base += pt_ex
                     else:
-                        if real_l_gol == ap_l_gol or real_v_gol == ap_v_gol: puntos_base += 1.0
-                        if (real_l_gol - real_v_gol) == (ap_l_gol - ap_v_gol): puntos_base += 1.0
-                puntos_totales = puntos_base
-                cursor.execute("UPDATE apuestas SET puntos_obtenidos = ? WHERE id_usuario = ? AND id_partido = ?", (puntos_totales, id_user, id_partido))
+                        if real_l_gol == ap_l_gol or real_v_gol == ap_v_gol: puntos_base += pt_pa
+                        if (real_l_gol - real_v_gol) == (ap_l_gol - ap_v_gol): puntos_base += pt_df
+                cursor.execute("UPDATE apuestas SET puntos_obtenidos = ? WHERE id_usuario = ? AND id_partido = ?", (puntos_base, id_user, id_partido))
         conn.commit()
         df_rank = pd.read_sql_query('SELECT u.nombre as Competidor, COALESCE(SUM(a.puntos_obtenidos), 0) as Puntos FROM usuarios u LEFT JOIN apuestas a ON u.id_usuario = a.id_usuario GROUP BY u.id_usuario ORDER BY Puntos DESC, u.nombre ASC', conn)
         conn.close()
@@ -212,18 +232,65 @@ class DatabaseManager:
         conn.close()
         return df
 
+    @staticmethod
+    def obtener_datos_auditoria_puntos():
+        conn = DatabaseManager.get_connection()
+        query = '''
+            SELECT 
+                u.nombre as Competidor,
+                p.fase as Fase,
+                el.nombre || ' vs ' || ev.nombre as Partido,
+                a.apuesta_goles_local as Al, a.apuesta_goles_visitante as Av,
+                p.goles_local as Rl, p.goles_visitante as Rv
+            FROM apuestas a
+            JOIN usuarios u ON a.id_usuario = u.id_usuario
+            JOIN partidos p ON a.id_partido = p.id_partido
+            JOIN equipos el ON p.id_equipo_local = el.id_equipo
+            JOIN equipos ev ON p.id_equipo_visitante = ev.id_equipo
+            WHERE p.goles_local IS NOT NULL AND a.apuesta_goles_local IS NOT NULL
+        '''
+        df = pd.read_sql_query(query, conn)
+        conn.close()
+        return df
+
 # --- INICIALIZACIÓN ---
 DatabaseManager.init_db()
 
 st.title("🏆 Prode Mundial 2026 — Dashboard en Vivo")
 st.markdown("Bienvenido al centro de estadísticas. Carga tus pronósticos y sigue los resultados en tiempo real.")
 
+# --- SE QUITA LA PESTAÑA FIJA DE REGLAMENTO ---
 tabs = st.tabs(["📊 Posiciones y Apuestas", "📤 Subir Mis Apuestas", "⚙️ Panel Administrador"])
 
 # ==========================================
 # TAB 1: DASHBOARD PÚBLICO
 # ==========================================
 with tabs[0]:
+    cfg = DatabaseManager.get_config()
+    
+    # --- BOTÓN DESPLEGABLE REGLAMENTO (SOLO SE VE SI HACEN CLIC) ---
+    with st.expander("📜 Ver Reglamento y Sistema de Puntuación"):
+        st.subheader("📝 Cálculo de Puntos Automático")
+        st.write("Los ítems suman de forma independiente según la fase del torneo:")
+        col_r1, col_r2 = st.columns(2)
+        with col_r1:
+            st.markdown(f"""
+            **🏟️ Fase de Grupos:**
+            * Acierto Ganador / Empate: **+{cfg[0]} Pts**
+            * Resultado Exacto: **+{cfg[1]} Pts**
+            * Goles de un Equipo Exactos: **+{cfg[2]} Pts**
+            * Diferencia de Goles Exacta: **+{cfg[3]} Pts**
+            """)
+        with col_r2:
+            st.markdown(f"""
+            **⚔️ Segunda Vuelta (Eliminación Directa):**
+            * Acierto Ganador: **+{cfg[7]} Pts**
+            * Resultado Exacto: **+{cfg[8]} Pts**
+            * Goles de un Equipo Exactos: **+{cfg[9]} Pts**
+            * Diferencia de Goles Exacta: **+{cfg[10]} Pts**
+            """)
+            
+    st.markdown("---")
     col1, col2 = st.columns([1, 2])
     with col1:
         st.subheader("⭐ Tabla de Posiciones")
@@ -308,7 +375,7 @@ with tabs[1]:
         out = io.BytesIO()
         wb.save(out)
         
-        st.download_button(label="📥 Descargar Plantilla de Apuestas Estilizada", data=out.getvalue(), file_name="Plantilla_Apuestas_Mundial.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        st.download_button(label="📥 Descargar Plantilla de Apuestas", data=out.getvalue(), file_name="Plantilla_Apuestas_Mundial.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
         
         st.markdown("---")
         uploaded_file = st.file_uploader("Sube tu Excel completado aquí:", type=["xlsx"])
@@ -338,29 +405,100 @@ with tabs[2]:
     if pass_input == cfg[6]:
         st.success("Acceso Administrador Autorizado")
         
-        # --- SECCIÓN NUEVA: SEGURIDAD DE LA BASE DE DATOS ---
-        st.markdown("### 💾 Copias de Seguridad (Anti-Reinicios de la Nube)")
-        c_seg1, c_seg2 = st.columns(2)
+        st.markdown("### 💾 Copias de Seguridad e Informes de Auditoría")
+        c_seg1, c_seg2, c_seg3 = st.columns(3)
         with c_seg1:
             if os.path.exists(DB_NAME):
                 with open(DB_NAME, "rb") as f_db:
-                    st.download_button(label="📥 Descargar Respaldo Total del Prode (.db)", data=f_db.read(), file_name="prode_backup.db", mime="application/octet-stream")
-                st.caption("Recomendación: Descargá una copia a tu PC cada vez que tus amigos suban apuestas nuevas.")
+                    st.download_button(label="📥 Descargar Respaldo de Base (.db)", data=f_db.read(), file_name="prode_backup.db", mime="application/octet-stream")
         with c_seg2:
-            arch_restaurar = st.file_uploader("Restaurar desde un Respaldo Anterior:", type=["db"])
+            arch_restaurar = st.file_uploader("Restaurar desde un Respaldo:", type=["db"])
             if arch_restaurar is not None:
                 with open(DB_NAME, "wb") as f_db_w:
                     f_db_w.write(arch_restaurar.getbuffer())
-                st.success("¡Base de datos restaurada con éxito! Reiniciando aplicación...")
+                st.success("¡Base de datos restaurada! Reiniciando...")
                 st.rerun()
+                
+        with c_seg3:
+            df_auditoria = DatabaseManager.obtener_datos_auditoria_puntos()
+            if not df_auditoria.empty:
+                wb_aud = openpyxl.Workbook(); ws_aud = wb_aud.active; ws_aud.title = "Auditoría de Puntos"
+                ws_aud.views.sheetView[0].showGridLines = True
+                
+                ws_aud.merge_cells("A1:J1"); ws_aud["A1"] = "INFORME DETALLADO DE DESGLOSE DE PUNTOS"
+                ws_aud["A1"].font = Font(name="Arial", size=14, bold=True, color="FFFFFF")
+                ws_aud["A1"].fill = PatternFill(start_color="1F4E5B", end_color="1F4E5B", fill_type="solid")
+                ws_aud["A1"].alignment = Alignment(horizontal="center", vertical="center")
+                ws_aud.row_dimensions[1].height = 35
+                
+                headers_aud = ['Competidor', 'Fase', 'Partido', 'Pronóstico', 'Resultado Real', 'Pts Ganador', 'Pts Exacto', 'Pts Goles', 'Pts Diferencia', 'Total Partido']
+                thin_b = Border(left=Side(style='thin', color='D3D3D3'), right=Side(style='thin', color='D3D3D3'), top=Side(style='thin', color='D3D3D3'), bottom=Side(style='thin', color='D3D3D3'))
+                
+                for col_idx, h in enumerate(headers_aud, 1):
+                    cell = ws_aud.cell(row=3, column=col_idx, value=h)
+                    cell.font = Font(name="Arial", size=11, bold=True, color="FFFFFF")
+                    cell.fill = PatternFill(start_color="007bff", end_color="007bff", fill_type="solid")
+                    cell.alignment = Alignment(horizontal="center", vertical="center"); cell.border = thin_b
+                ws_aud.row_dimensions[3].height = 28
+                
+                r_idx = 4
+                for _, row in df_auditoria.iterrows():
+                    al, av, rl, rv = int(row['Al']), int(row['Av']), int(row['Rl']), int(row['Rv'])
+                    res_real = 1 if rl > rv else (0 if rl == rv else -1)
+                    res_ap = 1 if al > av else (0 if al == av else -1)
+                    fase_row = row['Fase']
+                    
+                    # --- CONFIGURACIÓN DINÁMICA DE PUNTOS SEGÚN LA FASE EN AUDITORÍA ---
+                    if "Grupo" in fase_row:
+                        pt_p, pt_ex, pt_pa, pt_df = float(cfg[0]), float(cfg[1]), float(cfg[2]), float(cfg[3])
+                    else:
+                        pt_p, pt_ex, pt_pa, pt_df = float(cfg[7]), float(cfg[8]), float(cfg[9]), float(cfg[10])
+                    
+                    p_win, p_ex, p_gol, p_df = 0.0, 0.0, 0.0, 0.0
+                    if res_real == res_ap:
+                        p_win = pt_p
+                        if rl == al and rv == av: p_ex = pt_ex
+                        else:
+                            if rl == al or rv == av: p_gol = pt_pa
+                            if (rl - rv) == (al - av): p_df = pt_df
+                    tot_partido = p_win + p_ex + p_gol + p_df
+                    
+                    ws_aud.cell(row=r_idx, column=1, value=row['Competidor']).alignment = Alignment(horizontal="left")
+                    ws_aud.cell(row=r_idx, column=2, value=row['Fase']).alignment = Alignment(horizontal="center")
+                    ws_aud.cell(row=r_idx, column=3, value=row['Partido']).alignment = Alignment(horizontal="left")
+                    ws_aud.cell(row=r_idx, column=4, value=f"{al} - {av}").alignment = Alignment(horizontal="center")
+                    ws_aud.cell(row=r_idx, column=5, value=f"{rl} - {rv}").alignment = Alignment(horizontal="center")
+                    ws_aud.cell(row=r_idx, column=6, value=p_win).alignment = Alignment(horizontal="center")
+                    ws_aud.cell(row=r_idx, column=7, value=p_ex).alignment = Alignment(horizontal="center")
+                    ws_aud.cell(row=r_idx, column=8, value=p_gol).alignment = Alignment(horizontal="center")
+                    ws_aud.cell(row=r_idx, column=9, value=p_df).alignment = Alignment(horizontal="center")
+                    
+                    c_tot = ws_aud.cell(row=r_idx, column=10, value=tot_partido)
+                    c_tot.font = Font(bold=True); c_tot.alignment = Alignment(horizontal="center")
+                    c_tot.fill = PatternFill(start_color="F0F8FF", end_color="F0F8FF", fill_type="solid")
+                    
+                    for c in range(1, 11): 
+                        ws_aud.cell(row=r_idx, column=c).border = thin_b
+                        ws_aud.cell(row=r_idx, column=c).font = Font(name="Arial", size=10)
+                    ws_aud.row_dimensions[r_idx].height = 22
+                    r_idx += 1
+                
+                for col in ws_aud.columns:
+                    max_len = max(len(str(cell.value or '')) for cell in col)
+                    col_letter = openpyxl.utils.get_column_letter(col[0].column)
+                    ws_aud.column_dimensions[col_letter].width = max(max_len + 3, 12)
+                
+                out_aud = io.BytesIO()
+                wb_aud.save(out_aud)
+                st.download_button(label="📊 Descargar Excel: Desglose de Puntos Detallado", data=out_aud.getvalue(), file_name="Desglose_Puntos_Usuarios.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            else:
+                st.caption("El informe de desglose de puntos estará disponible cuando se cargue el primer resultado real.")
         
         st.markdown("---")
         
         col_adm1, col_adm2 = st.columns(2)
         with col_adm1:
             st.subheader("🛠️ Control del Fixture")
-            
-            # Botón de inyección automática de selecciones
             if st.button("🚀 Paso 1: Auto-Cargar 48 Selecciones del Mundial"):
                 DatabaseManager.cargar_48_selecciones_oficiales()
                 st.success("Se inyectaron las 48 selecciones del Mundial organizadas de la Zona A a la L.")
@@ -373,7 +511,7 @@ with tabs[2]:
                     st.warning("El fixture de grupos ya estaba generado o faltan equipos.")
 
             st.markdown("---")
-            st.subheader("⚔️ Habilitar Eliminación Directa (Mano a Mano)")
+            st.subheader("### Habilitar Eliminación Directa (Mano a Mano)")
             lista_eq = DatabaseManager.get_equipos_lista()
             if lista_eq:
                 fase_sel = st.selectbox("Fase:", ["16avos", "8vos", "4tos", "Semi", "Final"])
@@ -385,7 +523,7 @@ with tabs[2]:
                         st.error("Un equipo no puede jugar contra sí mismo.")
                     else:
                         DatabaseManager.insertar_partido_manual(fase_sel, eq_loc_id, eq_vis_id)
-                        st.success(f"Partido de {fase_sel} publicado. Ya está disponible en las plantillas de Excel.")
+                        st.success(f"Partido de {fase_sel} publicado con éxito.")
                         st.rerun()
             
             st.markdown("---")
@@ -415,22 +553,33 @@ with tabs[2]:
                         st.error(f"Error de conexión: {e}")
                         
         with col_adm2:
-            st.subheader("⚙️ Credenciales y Llaves")
+            st.subheader("⚙️ Configuración de Puntuación")
+            
+            # --- DIVISION DE ENTRADAS DE PUNTOS EN PANEL ADMIN ---
+            st.markdown("##### 🏟️ Puntos en Fase de Grupos")
             p_prode = st.number_input("Pts Ganador (Prode)", value=cfg[0])
             p_exact = st.number_input("Pts Resultado Exacto", value=cfg[1])
             p_parc = st.number_input("Pts Goles de un Equipo", value=cfg[2])
             p_dif = st.number_input("Pts Diferencia de Goles", value=cfg[3])
+            
+            st.markdown("##### ⚔️ Puntos en Segunda Vuelta (Eliminación)")
+            p_prode_ko = st.number_input("Pts Ganador KO", value=cfg[7])
+            p_exact_ko = st.number_input("Pts Resultado Exacto KO", value=cfg[8])
+            p_parc_ko = st.number_input("Pts Goles de un Equipo KO", value=cfg[9])
+            p_dif_ko = st.number_input("Pts Diferencia de Goles KO", value=cfg[10])
+            
+            st.markdown("##### 🔑 Credenciales y Llaves")
             ak = st.text_input("API Key de API-Football:", value=cfg[4])
             id_l = st.text_input("ID de la Liga/Mundial:", value=cfg[5])
             new_pass = st.text_input("Nueva Clave Admin:", value=cfg[6])
             
             if st.button("Guardar Cambios de Configuración"):
-                DatabaseManager.set_config(p_prode, p_exact, p_parc, p_dif, ak, id_l, new_pass)
-                st.success("Configuración del sistema guardada con éxito.")
+                DatabaseManager.set_config(p_prode, p_exact, p_parc, p_dif, ak, id_l, new_pass, p_prode_ko, p_exact_ko, p_parc_ko, p_dif_ko)
+                st.success("Configuración guardada con éxito.")
                 st.rerun()
                 
         st.markdown("---")
-        st.subheader("📊 Grilla de Partidos Actuales")
+        st.subheader("### Grilla de Partidos Actuales")
         df_adm_partidos = DatabaseManager.get_partidos_con_nombres()
         st.dataframe(df_adm_partidos, use_container_width=True, hide_index=True)
     else:
