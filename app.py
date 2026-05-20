@@ -27,7 +27,7 @@ class DatabaseManager:
         cursor.execute('''CREATE TABLE IF NOT EXISTS apuestas (id_apuesta INTEGER PRIMARY KEY AUTOINCREMENT, id_usuario INTEGER, id_partido INTEGER, apuesta_goles_local INTEGER DEFAULT NULL, apuesta_goles_visitante INTEGER DEFAULT NULL, equipo_l_predicho TEXT, equipo_v_predicho TEXT, puntos_obtenidos REAL DEFAULT 0.0, FOREIGN KEY(id_usuario) REFERENCES usuarios(id_usuario), FOREIGN KEY(id_partido) REFERENCES partidos(id_partido), UNIQUE(id_usuario, id_partido))''')
         cursor.execute('''CREATE TABLE IF NOT EXISTS configuracion (id INTEGER PRIMARY KEY, pts_prode INTEGER, pts_exacto INTEGER, pts_parcial INTEGER, pts_dif INTEGER, api_key TEXT, id_liga TEXT, admin_pass TEXT)''')
         
-        # --- MIGRACIÓN AUTOMÁTICA SEGUNDA VUELTA ---
+        # Migraciones automáticas de campos
         try: cursor.execute("ALTER TABLE configuracion ADD COLUMN pts_prode_ko INTEGER DEFAULT 8")
         except: pass
         try: cursor.execute("ALTER TABLE configuracion ADD COLUMN pts_exacto_ko INTEGER DEFAULT 6")
@@ -40,6 +40,25 @@ class DatabaseManager:
         cursor.execute("SELECT COUNT(*) FROM configuracion")
         if cursor.fetchone()[0] == 0:
             cursor.execute("INSERT INTO configuracion (id, pts_prode, pts_exacto, pts_parcial, pts_dif, api_key, id_liga, admin_pass, pts_prode_ko, pts_exacto_ko, pts_parcial_ko, pts_dif_ko) VALUES (1, 4, 3, 1, 1, '', '1', 'admin123', 8, 6, 2, 2)")
+        
+        # --- MIGRACIÓN ACTIVA DE BANDERAS HD ---
+        iso_mapping = {
+            "México": "mx", "Estados Unidos": "us", "Canadá": "ca", "Costa Rica": "cr",
+            "Argentina": "ar", "Brasil": "br", "Uruguay": "uy", "Colombia": "co",
+            "Francia": "fr", "Inglaterra": "gb", "España": "es", "Alemania": "de",
+            "Portugal": "pt", "Italia": "it", "Países Bajos": "nl", "Bélgica": "be",
+            "Croacia": "hr", "Marruecos": "ma", "Japón": "jp", "Senegal": "sn",
+            "Ecuador": "ec", "Perú": "pe", "Chile": "cl", "Paraguay": "py",
+            "Ghana": "gh", "Camerún": "cm", "Túnez": "tn", "Argelia": "dz",
+            "Corea del Sur": "kr", "Australia": "au", "Irán": "ir", "Arabia Saudita": "sa",
+            "Jamaica": "jm", "Panamá": "pa", "Honduras": "hn", "El Salvador": "sv",
+            "Nigeria": "ng", "Costa de Marfil": "ci", "Egipto": "eg", "Mali": "ml",
+            "Suiza": "ch", "Dinamarca": "dk", "Serbia": "rs", "Ucrania": "ua",
+            "Polonia": "pl", "Suecia": "se", "Escocia": "gb", "Gales": "gb"
+        }
+        for sel, iso in iso_mapping.items():
+            cursor.execute("UPDATE equipos SET archivo_bandera = ? WHERE nombre = ?", (f"https://flagcdn.com/w40/{iso}.png", sel))
+            
         conn.commit()
         conn.close()
 
@@ -87,9 +106,25 @@ class DatabaseManager:
             "K": ["Suiza", "Dinamarca", "Serbia", "Ucrania"],
             "L": ["Polonia", "Suecia", "Escocia", "Gales"]
         }
+        iso_mapping = {
+            "México": "mx", "Estados Unidos": "us", "Canadá": "ca", "Costa Rica": "cr",
+            "Argentina": "ar", "Brasil": "br", "Uruguay": "uy", "Colombia": "co",
+            "Francia": "fr", "Inglaterra": "gb", "España": "es", "Alemania": "de",
+            "Portugal": "pt", "Italia": "it", "Países Bajos": "nl", "Bélgica": "be",
+            "Croacia": "hr", "Marruecos": "ma", "Japón": "jp", "Senegal": "sn",
+            "Ecuador": "ec", "Perú": "pe", "Chile": "cl", "Paraguay": "py",
+            "Ghana": "gh", "Camerún": "cm", "Túnez": "tn", "Argelia": "dz",
+            "Corea del Sur": "kr", "Australia": "au", "Irán": "ir", "Arabia Saudita": "sa",
+            "Jamaica": "jm", "Panamá": "pa", "Honduras": "hn", "El Salvador": "sv",
+            "Nigeria": "ng", "Costa de Marfil": "ci", "Egipto": "eg", "Mali": "ml",
+            "Suiza": "ch", "Dinamarca": "dk", "Serbia": "rs", "Ucrania": "ua",
+            "Polonia": "pl", "Suecia": "se", "Escocia": "gb", "Gales": "gb"
+        }
         for grupo, selecciones in mapa_grupos.items():
             for sel in selecciones:
-                cursor.execute('INSERT OR IGNORE INTO equipos (nombre, zona, archivo_bandera) VALUES (?, ?, "default.png")', (sel, grupo))
+                iso = iso_mapping.get(sel, "un")
+                url_bandera = f"https://flagcdn.com/w40/{iso}.png"
+                cursor.execute('INSERT OR IGNORE INTO equipos (nombre, zona, archivo_bandera) VALUES (?, ?, ?)', (sel, grupo, url_bandera))
         conn.commit()
         conn.close()
 
@@ -124,6 +159,7 @@ class DatabaseManager:
         conn.commit()
         conn.close()
 
+    # --- CAMBIO: INCLUYE COLUMNAS DE URL DE BANDERAS LOCAL/VISITANTE ---
     @staticmethod
     def get_partidos_con_nombres():
         conn = DatabaseManager.get_connection()
@@ -131,10 +167,12 @@ class DatabaseManager:
             SELECT 
                 p.id_partido as id_partido, 
                 p.fase as Fase, 
+                el.archivo_bandera as [ ],
                 el.nombre as Local, 
                 p.goles_local as goles_local, 
                 p.goles_visitante as goles_visitante, 
-                ev.nombre as Visitante 
+                ev.nombre as Visitante,
+                ev.archivo_bandera as [  ]
             FROM partidos p 
             JOIN equipos el ON p.id_equipo_local = el.id_equipo 
             JOIN equipos ev ON p.id_equipo_visitante = ev.id_equipo 
@@ -203,7 +241,6 @@ class DatabaseManager:
             apuestas = cursor.fetchall()
             res_real = 1 if real_l_gol > real_v_gol else (0 if real_l_gol == real_v_gol else -1)
             
-            # Divide regla de puntos si es grupos o eliminación
             if "Grupo" in fase:
                 pt_p, pt_ex, pt_pa, pt_df = float(cfg_pts[0]), float(cfg_pts[1]), float(cfg_pts[2]), float(cfg_pts[3])
             else:
@@ -224,11 +261,30 @@ class DatabaseManager:
         conn.close()
         return df_rank
 
+    # --- CAMBIO: EXTRAE BANDERAS PARA EL "ESPÍA" DE JUEGOS ---
     @staticmethod
     def get_apuestas_usuario_web(nombre_usuario):
         conn = DatabaseManager.get_connection()
-        query = '''SELECT p.fase as Fase, a.equipo_l_predicho as Local, a.apuesta_goles_local as [GL Pred], a.apuesta_goles_visitante as [GV Pred], a.equipo_v_predicho as Visitante, p.goles_local as [GL Real], p.goles_visitante as [GV Real], a.puntos_obtenidos as [Pts Ganados] FROM apuestas a JOIN usuarios u ON a.id_usuario = u.id_usuario JOIN partidos p ON a.id_partido = p.id_partido WHERE u.nombre = ?'''
-        df = pd.read_sql_query(query, conn, params=(nombre_usuario,))
+        query = '''
+            SELECT 
+                p.fase as Fase, 
+                el.archivo_bandera as [ ],
+                a.equipo_l_predicho as Local, 
+                a.apuesta_goles_local as [GL Pred], 
+                a.apuesta_goles_visitante as [GV Pred], 
+                a.equipo_v_predicho as Visitante, 
+                ev.archivo_bandera as [  ],
+                p.goles_local as [GL Real], 
+                p.goles_visitante as [GV Real], 
+                a.puntos_obtenidos as [Pts Ganados] 
+            FROM apuestas a 
+            JOIN usuarios u ON a.id_usuario = u.id_usuario 
+            JOIN partidos p ON a.id_partido = p.id_partido 
+            JOIN equipos el ON p.id_equipo_local = el.id_equipo
+            JOIN equipos ev ON p.id_equipo_visitante = ev.id_equipo
+            WHERE u.nombre = ?
+        '''
+        df = pd.read_sql_query(query, conn)
         conn.close()
         return df
 
@@ -259,7 +315,6 @@ DatabaseManager.init_db()
 st.title("🏆 Prode Mundial 2026 — Dashboard en Vivo")
 st.markdown("Bienvenido al centro de estadísticas. Carga tus pronósticos y sigue los resultados en tiempo real.")
 
-# --- SE QUITA LA PESTAÑA FIJA DE REGLAMENTO ---
 tabs = st.tabs(["📊 Posiciones y Apuestas", "📤 Subir Mis Apuestas", "⚙️ Panel Administrador"])
 
 # ==========================================
@@ -268,7 +323,6 @@ tabs = st.tabs(["📊 Posiciones y Apuestas", "📤 Subir Mis Apuestas", "⚙️
 with tabs[0]:
     cfg = DatabaseManager.get_config()
     
-    # --- BOTÓN DESPLEGABLE REGLAMENTO (SOLO SE VE SI HACEN CLIC) ---
     with st.expander("📜 Ver Reglamento y Sistema de Puntuación"):
         st.subheader("📝 Cálculo de Puntos Automático")
         st.write("Los ítems suman de forma independiente según la fase del torneo:")
@@ -305,7 +359,11 @@ with tabs[0]:
             user_sel = st.selectbox("Selecciona un competidor para desplegar su juego:", usuarios)
             if user_sel:
                 df_user_ap = DatabaseManager.get_apuestas_usuario_web(user_sel)
-                st.dataframe(df_user_ap, use_container_width=True, hide_index=True)
+                # --- CAMBIO: CONFIGURACIÓN PARA RENDERIZAR LAS IMÁGENES DE LAS BANDERAS ---
+                st.dataframe(df_user_ap, use_container_width=True, hide_index=True, column_config={
+                    " ": st.column_config.ImageColumn(label=""),
+                    "  ": st.column_config.ImageColumn(label="")
+                })
         else:
             st.info("Aún no hay usuarios cargados en el sistema.")
 
@@ -448,7 +506,6 @@ with tabs[2]:
                     res_ap = 1 if al > av else (0 if al == av else -1)
                     fase_row = row['Fase']
                     
-                    # --- CONFIGURACIÓN DINÁMICA DE PUNTOS SEGÚN LA FASE EN AUDITORÍA ---
                     if "Grupo" in fase_row:
                         pt_p, pt_ex, pt_pa, pt_df = float(cfg[0]), float(cfg[1]), float(cfg[2]), float(cfg[3])
                     else:
@@ -501,7 +558,8 @@ with tabs[2]:
             st.subheader("🛠️ Control del Fixture")
             if st.button("🚀 Paso 1: Auto-Cargar 48 Selecciones del Mundial"):
                 DatabaseManager.cargar_48_selecciones_oficiales()
-                st.success("Se inyectaron las 48 selecciones del Mundial organizadas de la Zona A a la L.")
+                st.success("Se inyectaron las 48 selecciones con sus respectivas banderas HD.")
+                st.rerun()
             
             if st.button("📅 Paso 2: Generar Fixture Fase de Grupos"):
                 if DatabaseManager.generar_fixture_fase_grupos():
@@ -555,7 +613,6 @@ with tabs[2]:
         with col_adm2:
             st.subheader("⚙️ Configuración de Puntuación")
             
-            # --- DIVISION DE ENTRADAS DE PUNTOS EN PANEL ADMIN ---
             st.markdown("##### 🏟️ Puntos en Fase de Grupos")
             p_prode = st.number_input("Pts Ganador (Prode)", value=cfg[0])
             p_exact = st.number_input("Pts Resultado Exacto", value=cfg[1])
@@ -563,25 +620,4 @@ with tabs[2]:
             p_dif = st.number_input("Pts Diferencia de Goles", value=cfg[3])
             
             st.markdown("##### ⚔️ Puntos en Segunda Vuelta (Eliminación)")
-            p_prode_ko = st.number_input("Pts Ganador KO", value=cfg[7])
-            p_exact_ko = st.number_input("Pts Resultado Exacto KO", value=cfg[8])
-            p_parc_ko = st.number_input("Pts Goles de un Equipo KO", value=cfg[9])
-            p_dif_ko = st.number_input("Pts Diferencia de Goles KO", value=cfg[10])
-            
-            st.markdown("##### 🔑 Credenciales y Llaves")
-            ak = st.text_input("API Key de API-Football:", value=cfg[4])
-            id_l = st.text_input("ID de la Liga/Mundial:", value=cfg[5])
-            new_pass = st.text_input("Nueva Clave Admin:", value=cfg[6])
-            
-            if st.button("Guardar Cambios de Configuración"):
-                DatabaseManager.set_config(p_prode, p_exact, p_parc, p_dif, ak, id_l, new_pass, p_prode_ko, p_exact_ko, p_parc_ko, p_dif_ko)
-                st.success("Configuración guardada con éxito.")
-                st.rerun()
-                
-        st.markdown("---")
-        st.subheader("### Grilla de Partidos Actuales")
-        df_adm_partidos = DatabaseManager.get_partidos_con_nombres()
-        st.dataframe(df_adm_partidos, use_container_width=True, hide_index=True)
-    else:
-        if pass_input:
-            st.error("Contraseña incorrecta.")
+            p_prode_ko = st.number_input("Pts Ganador KO", value=cfg
