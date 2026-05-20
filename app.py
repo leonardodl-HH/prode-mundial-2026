@@ -168,8 +168,8 @@ class DatabaseManager:
                 p.fase as Fase, 
                 el.archivo_bandera as [ ],
                 el.nombre as Local, 
-                p.goles_local as goles_local, 
-                p.goles_visitante as goles_visitante, 
+                p.goles_local as [GL Real], 
+                p.goles_visitante as [GV Real], 
                 ev.nombre as Visitante,
                 ev.archivo_bandera as [  ]
             FROM partidos p 
@@ -333,7 +333,7 @@ st.markdown("Bienvenido al centro de estadísticas. Carga tus pronósticos y sig
 tabs = st.tabs(["📊 Posiciones y Apuestas", "📤 Subir Mis Apuestas", "⚙️ Panel Administrador"])
 
 # ==========================================
-# TAB 1: DASHBOARD PÚBLICO
+# TAB 1: DASHBOARD PÚBLICO (REDISEÑADA COMPLETA)
 # ==========================================
 with tabs[0]:
     cfg = DatabaseManager.get_config()
@@ -360,7 +360,10 @@ with tabs[0]:
             """)
             
     st.markdown("---")
-    col1, col2 = st.columns([1, 2])
+    
+    # --- PANTALLA DIVIDIDA: POSICIONES VS RESULTADOS REALES ---
+    col1, col2 = st.columns([1, 1.2])
+    
     with col1:
         st.subheader("⭐ Tabla de Posiciones")
         df_rank = DatabaseManager.calcular_ranking_avanzado()
@@ -368,18 +371,32 @@ with tabs[0]:
         st.dataframe(df_rank, use_container_width=True)
 
     with col2:
-        st.subheader("📊 Ver Apuestas")
-        usuarios = DatabaseManager.get_usuarios()
-        if usuarios:
-            user_sel = st.selectbox("Selecciona un competidor para desplegar su juego:", usuarios)
-            if user_sel:
-                df_user_ap = DatabaseManager.get_apuestas_usuario_web(user_sel)
-                st.dataframe(df_user_ap, use_container_width=True, hide_index=True, column_config={
-                    " ": st.column_config.ImageColumn(label=""),
-                    "  ": st.column_config.ImageColumn(label="")
-                })
+        st.subheader("📅 Fixture y Resultados Oficiales")
+        df_public_partidos = DatabaseManager.get_partidos_con_nombres()
+        if not df_public_partidos.empty:
+            st.dataframe(df_public_partidos, use_container_width=True, hide_index=True, column_config={
+                " ": st.column_config.ImageColumn(label=""),
+                "  ": st.column_config.ImageColumn(label=""),
+                "[GL Real]": st.column_config.NumberColumn(label="GL"),
+                "[GV Real]": st.column_config.NumberColumn(label="GV")
+            })
         else:
-            st.info("Aún no hay usuarios cargados en el sistema.")
+            st.info("El fixture todavía no fue generado por el administrador.")
+
+    # --- CONSULTA DE APUESTAS ABAJO COMPLETO ---
+    st.markdown("---")
+    st.subheader("🔍 Espiar Apuestas de los Competidores")
+    usuarios = DatabaseManager.get_usuarios()
+    if usuarios:
+        user_sel = st.selectbox("Selecciona un competidor para desplegar su juego completo:", usuarios)
+        if user_sel:
+            df_user_ap = DatabaseManager.get_apuestas_usuario_web(user_sel)
+            st.dataframe(df_user_ap, use_container_width=True, hide_index=True, column_config={
+                " ": st.column_config.ImageColumn(label=""),
+                "  ": st.column_config.ImageColumn(label="")
+            })
+    else:
+        st.info("Aún no hay usuarios cargados en el sistema.")
 
 # ==========================================
 # TAB 2: USER CARGA APUESTAS
@@ -477,7 +494,6 @@ with tabs[2]:
     if pass_input == cfg[6]:
         st.success("Acceso Administrador Autorizado")
         
-        # --- SOLUCIÓN DEL NAMEERROR: DECLARACIÓN GLOBAL DE BORDES AL ENTRAR AL PANEL ADMIN ---
         thin_b = Border(left=Side(style='thin', color='D3D3D3'), right=Side(style='thin', color='D3D3D3'), top=Side(style='thin', color='D3D3D3'), bottom=Side(style='thin', color='D3D3D3'))
         
         st.markdown("### 💾 Respaldo e Informes de Auditoría")
@@ -517,7 +533,13 @@ with tabs[2]:
                 
                 r_idx = 4
                 for _, row in df_auditoria.iterrows():
-                    al, av, rl, rv = int(row['Al']), int(row['Av']), int(row['Rl']), int(row['Rv'])
+                    # Convierte con seguridad para evitar errores por campos vacíos
+                    try:
+                        al, av = int(row['Al']), int(row['Av'])
+                        rl, rv = int(row['Rl']), int(row['Rv'])
+                    except:
+                        continue
+                        
                     res_real = 1 if rl > rv else (0 if rl == rv else -1)
                     res_ap = 1 if al > av else (0 if al == av else -1)
                     fase_row = row['Fase']
@@ -634,8 +656,8 @@ with tabs[2]:
                     ws_adm_res.cell(row=row_n, column=2, value=r['Fase']).alignment = Alignment(horizontal="center")
                     ws_adm_res.cell(row=row_n, column=3, value=r['Local']).alignment = Alignment(horizontal="left")
                     
-                    gl_val = "" if pd.isna(r['goles_local']) else int(r['goles_local'])
-                    gv_val = "" if pd.isna(r['goles_visitante']) else int(r['goles_visitante'])
+                    gl_val = "" if pd.isna(r['GL Real']) else int(r['GL Real'])
+                    gv_val = "" if pd.isna(r['GV Real']) else int(r['GV Real'])
                     
                     ws_adm_res.cell(row=row_n, column=4, value=gl_val).alignment = Alignment(horizontal="center")
                     ws_adm_res.cell(row=row_n, column=5, value=gv_val).alignment = Alignment(horizontal="center")
