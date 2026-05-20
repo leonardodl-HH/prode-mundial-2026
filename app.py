@@ -41,11 +41,11 @@ class DatabaseManager:
         if cursor.fetchone()[0] == 0:
             cursor.execute("INSERT INTO configuracion (id, pts_prode, pts_exacto, pts_parcial, pts_dif, api_key, id_liga, admin_pass, pts_prode_ko, pts_exacto_ko, pts_parcial_ko, pts_dif_ko) VALUES (1, 4, 3, 1, 1, '', '1', 'admin123', 8, 6, 2, 2)")
         
-        # Configuración de URLs para las banderas de FlagCDN
+        # Configuración de URLs para las banderas independientes de FlagCDN
         iso_mapping = {
             "México": "mx", "Estados Unidos": "us", "Canadá": "ca", "Costa Rica": "cr",
             "Argentina": "ar", "Brasil": "br", "Uruguay": "uy", "Colombia": "co",
-            "Francia": "fr", "Inglaterra": "gb", "España": "es", "Alemania": "de",
+            "Francia": "fr", "Inglaterra": "gb-eng", "España": "es", "Alemania": "de",
             "Portugal": "pt", "Italia": "it", "Países Bajos": "nl", "Bélgica": "be",
             "Croacia": "hr", "Marruecos": "ma", "Japón": "jp", "Senegal": "sn",
             "Ecuador": "ec", "Perú": "pe", "Chile": "cl", "Paraguay": "py",
@@ -54,7 +54,7 @@ class DatabaseManager:
             "Jamaica": "jm", "Panamá": "pa", "Honduras": "hn", "El Salvador": "sv",
             "Nigeria": "ng", "Costa de Marfil": "ci", "Egipto": "eg", "Mali": "ml",
             "Suiza": "ch", "Dinamarca": "dk", "Serbia": "rs", "Ucrania": "ua",
-            "Polonia": "pl", "Suecia": "se", "Escocia": "gb", "Gales": "gb"
+            "Polonia": "pl", "Suecia": "se", "Escocia": "gb-sct", "Gales": "gb-wls"
         }
         for sel, iso in iso_mapping.items():
             cursor.execute("UPDATE equipos SET archivo_bandera = ? WHERE nombre = ?", (f"https://flagcdn.com/w40/{iso}.png", sel))
@@ -109,7 +109,7 @@ class DatabaseManager:
         iso_mapping = {
             "México": "mx", "Estados Unidos": "us", "Canadá": "ca", "Costa Rica": "cr",
             "Argentina": "ar", "Brasil": "br", "Uruguay": "uy", "Colombia": "co",
-            "Francia": "fr", "Inglaterra": "gb", "España": "es", "Alemania": "de",
+            "Francia": "fr", "Inglaterra": "gb-eng", "España": "es", "Alemania": "de",
             "Portugal": "pt", "Italia": "it", "Países Bajos": "nl", "Bélgica": "be",
             "Croacia": "hr", "Marruecos": "ma", "Japón": "jp", "Senegal": "sn",
             "Ecuador": "ec", "Perú": "pe", "Chile": "cl", "Paraguay": "py",
@@ -118,7 +118,7 @@ class DatabaseManager:
             "Jamaica": "jm", "Panamá": "pa", "Honduras": "hn", "El Salvador": "sv",
             "Nigeria": "ng", "Costa de Marfil": "ci", "Egipto": "eg", "Mali": "ml",
             "Suiza": "ch", "Dinamarca": "dk", "Serbia": "rs", "Ucrania": "ua",
-            "Polonia": "pl", "Suecia": "se", "Escocia": "gb", "Gales": "gb"
+            "Polonia": "pl", "Suecia": "se", "Escocia": "gb-sct", "Gales": "gb-wls"
         }
         for grupo, selecciones in mapa_grupos.items():
             for sel in selecciones:
@@ -195,6 +195,24 @@ class DatabaseManager:
         conn = DatabaseManager.get_connection()
         cursor = conn.cursor()
         cursor.execute("UPDATE partidos SET goles_local = ?, goles_visitante = ? WHERE id_partido = ?", (goles_l, goles_v, id_partido))
+        conn.commit()
+        conn.close()
+
+    # --- NUEVA FUNCIÓN: CARGA MANUAL DE GANADORES DESDE EXCEL DE CONTINGENCIA ---
+    @staticmethod
+    def importar_resultados_excel_admin(df):
+        conn = DatabaseManager.get_connection()
+        cursor = conn.cursor()
+        for _, row in df.iterrows():
+            try:
+                id_partido = int(row['ID_Partido'])
+                if pd.isna(row['Goles_L']) or pd.isna(row['Goles_V']):
+                    continue
+                gl = int(row['Goles_L'])
+                gv = int(row['Goles_V'])
+                cursor.execute("UPDATE partidos SET goles_local = ?, goles_visitante = ? WHERE id_partido = ?", (gl, gv, id_partido))
+            except:
+                continue
         conn.commit()
         conn.close()
 
@@ -444,7 +462,7 @@ with tabs[1]:
                     df_user = pd.read_excel(uploaded_file, skiprows=4)
                     df_user['Competidor'] = competidor
                     DatabaseManager.importar_apuestas_excel(df_user)
-                    st.success(f"¡Excelente! Procesamos las apuestas de '{competidor}' con éxito.")
+                    st.success(f"¡Excelente! Pronósticos de '{competidor}' cargados correctamente.")
             except Exception as e:
                 st.error(f"Error procesando el archivo: {e}")
     else:
@@ -460,7 +478,7 @@ with tabs[2]:
     if pass_input == cfg[6]:
         st.success("Acceso Administrador Autorizado")
         
-        st.markdown("### 💾 Copias de Seguridad e Informes de Auditoría")
+        st.markdown("### 💾 Respaldo e Informes de Auditoría")
         c_seg1, c_seg2, c_seg3 = st.columns(3)
         with c_seg1:
             if os.path.exists(DB_NAME):
@@ -471,7 +489,7 @@ with tabs[2]:
             if arch_restaurar is not None:
                 with open(DB_NAME, "wb") as f_db_w:
                     f_db_w.write(arch_restaurar.getbuffer())
-                st.success("¡Base de datos restaurada! Reiniciando...")
+                st.success("¡Base de datos restaurada con éxito!")
                 st.rerun()
                 
         with c_seg3:
@@ -544,48 +562,25 @@ with tabs[2]:
                 
                 out_aud = io.BytesIO()
                 wb_aud.save(out_aud)
-                st.download_button(label="📊 Descargar Excel: Desglose de Puntos Detallado", data=out_aud.getvalue(), file_name="Desglose_Puntos_Usuarios.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+                st.download_button(label="📊 Descargar Excel: Desglose de Puntos", data=out_aud.getvalue(), file_name="Desglose_Puntos_Usuarios.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
             else:
-                st.caption("El informe de desglose de puntos estará disponible cuando se cargue el primer resultado real.")
+                st.caption("El informe de desglose de puntos estará disponible cuando ruede la pelota.")
         
         st.markdown("---")
         
-        col_adm1, col_adm2 = st.columns(2)
-        with col_adm1:
-            st.subheader("🛠️ Control del Fixture")
-            if st.button("🚀 Paso 1: Auto-Cargar 48 Selecciones del Mundial"):
-                DatabaseManager.cargar_48_selecciones_oficiales()
-                st.success("Se inyectaron las 48 selecciones con sus respectivas banderas HD.")
-                st.rerun()
-            
-            if st.button("📅 Paso 2: Generar Fixture Fase de Grupos"):
-                if DatabaseManager.generar_fixture_fase_grupos():
-                    st.success("Fixture de grupos creado correctamente (6 partidos por grupo).")
-                    st.rerun()
-                else:
-                    st.warning("El fixture de grupos ya estaba generado o faltan equipos.")
-
-            st.markdown("---")
-            st.subheader("### Habilitar Eliminación Directa (Mano a Mano)")
-            lista_eq = DatabaseManager.get_equipos_lista()
-            if lista_eq:
-                fase_sel = st.selectbox("Fase:", ["16avos", "8vos", "4tos", "Semi", "Final"])
-                eq_loc_id = st.selectbox("Selecciona Equipo Local:", [e[0] for e in lista_eq], format_func=lambda x: next(i[1] for i in lista_eq if i[0] == x))
-                eq_vis_id = st.selectbox("Selecciona Equipo Visitante:", [e[0] for e in lista_eq], format_func=lambda x: next(i[1] for i in lista_eq if i[0] == x), key="vis")
-                
-                if st.button("➕ Publicar Cruce de Eliminación"):
-                    if eq_loc_id == eq_vis_id:
-                        st.error("Un equipo no puede jugar contra sí mismo.")
-                    else:
-                        DatabaseManager.insertar_partido_manual(fase_sel, eq_loc_id, eq_vis_id)
-                        st.success(f"Partido de {fase_sel} publicado con éxito.")
-                        st.rerun()
-            
-            st.markdown("---")
-            st.subheader("🌐 Sincronización en la Nube (API)")
-            if st.button("🔄 Sincronizar Resultados vía API Now"):
+        # =========================================================
+        # SECCIÓN REDISEÑADA: CARGA DE RESULTADOS (API VS EXCEL)
+        # =========================================================
+        st.markdown("### 🔄 Carga de Resultados Oficiales del Torneo")
+        st.write("Elegí el método para cargar los goles reales de los partidos. La API es la prioridad y pisará siempre los datos, pero tenés el bloque de contingencia manual en Excel abajo.")
+        
+        col_res1, col_res2 = st.columns(2)
+        
+        with col_res1:
+            st.markdown("##### 🌐 Opción Principal: Sincronización Automática")
+            if st.button("🔄 Sincronizar Resultados vía API Now", use_container_width=True):
                 if not cfg[4]:
-                    st.error("Falta tu API Key en la configuración de la derecha.")
+                    st.error("Error: Falta tu API Key en el panel de configuración de abajo.")
                 else:
                     url = "https://v3.football.api-sports.io/fixtures"
                     headers = {"x-rapidapi-key": cfg[4], "x-rapidapi-host": "v3.football.api-sports.io"}
@@ -603,9 +598,106 @@ with tabs[2]:
                                     if al in row['Local'].lower() and av in row['Visitante'].lower():
                                         DatabaseManager.guardar_resultado(int(row['id_partido']), gl, gv)
                                         count += 1
-                        st.success(f"Sincronización terminada. {count} partidos actualizados.")
+                        st.success(f"¡Sincronización terminada! {count} partidos actualizados desde la API oficial (se sobreescribieron datos manuales).")
+                        st.rerun()
                     except Exception as e:
-                        st.error(f"Error de conexión: {e}")
+                        st.error(f"Error de conexión con la API: {e}")
+                        
+        with col_res2:
+            st.markdown("##### 📂 Opción Secundaria: Contingencia Manual por Excel")
+            df_actual_goles = DatabaseManager.get_partidos_con_nombres()
+            
+            if not df_actual_goles.empty:
+                wb_adm_res = openpyxl.Workbook(); ws_adm_res = wb_adm_res.active; ws_adm_res.title = "Resultados"
+                ws_adm_res.views.sheetView[0].showGridLines = True
+                
+                ws_adm_res.merge_cells("A1:F1"); ws_adm_res["A1"] = "PRODE MUNDIAL - CARGA MANUAL DE RESULTADOS REALES"
+                ws_adm_res["A1"].font = Font(name="Arial", size=13, bold=True, color="FFFFFF")
+                ws_adm_res["A1"].fill = PatternFill(start_color="8B0000", end_color="8B0000", fill_type="solid")
+                ws_adm_res["A1"].alignment = Alignment(horizontal="center", vertical="center")
+                ws_adm_res.row_dimensions[1].height = 35
+                
+                ws_adm_res["A3"] = "INSTRUCCIONES:"; ws_adm_res["A3"].font = Font(name="Arial", size=11, bold=True)
+                ws_adm_res["B3"] = "Complete las celdas de las columnas Goles_L y Goles_V. Guarde y suba el archivo."
+                
+                headers_res = ['ID_Partido', 'Fase', 'Local', 'Goles_L', 'Goles_V', 'Visitante']
+                for col_num, h in enumerate(headers_res, 1):
+                    c = ws_adm_res.cell(row=5, column=col_num, value=h)
+                    c.font = Font(name="Arial", size=11, bold=True, color="FFFFFF"); c.fill = PatternFill(start_color="343a40", end_color="343a40", fill_type="solid")
+                    c.alignment = Alignment(horizontal="center", vertical="center"); c.border = thin_b
+                ws_adm_res.row_dimensions[5].height = 28
+                
+                row_n = 6
+                for _, r in df_actual_goles.iterrows():
+                    ws_adm_res.cell(row=row_n, column=1, value=r['id_partido']).alignment = Alignment(horizontal="center")
+                    ws_adm_res.cell(row=row_n, column=2, value=r['Fase']).alignment = Alignment(horizontal="center")
+                    ws_adm_res.cell(row=row_n, column=3, value=r['Local']).alignment = Alignment(horizontal="left")
+                    
+                    # Conserva goles ya cargados para facilitar actualización
+                    gl_val = "" if pd.isna(r['goles_local']) else int(r['goles_local'])
+                    gv_val = "" if pd.isna(r['goles_visitante']) else int(r['goles_visitante'])
+                    
+                    ws_adm_res.cell(row=row_n, column=4, value=gl_val).alignment = Alignment(horizontal="center")
+                    ws_adm_res.cell(row=row_n, column=5, value=gv_val).alignment = Alignment(horizontal="center")
+                    ws_adm_res.cell(row=row_n, column=6, value=r['Visitante']).alignment = Alignment(horizontal="left")
+                    
+                    for c in range(1, 7):
+                        ws_adm_res.cell(row=row_n, column=c).border = thin_b
+                        if c in [4, 5]:
+                            ws_adm_res.cell(row=row_n, column=c).fill = PatternFill(start_color="FFF8DC", end_color="FFF8DC", fill_type="solid")
+                    row_n += 1
+                    
+                ws_adm_res.column_dimensions['A'].width = 12; ws_adm_res.column_dimensions['B'].width = 15
+                ws_adm_res.column_dimensions['C'].width = 22; ws_adm_res.column_dimensions['D'].width = 12
+                ws_adm_res.column_dimensions['E'].width = 12; ws_adm_res.column_dimensions['F'].width = 22
+                
+                out_adm_res = io.BytesIO()
+                wb_adm_res.save(out_adm_res)
+                
+                st.download_button(label="📥 Descargar Planilla de Resultados Reales", data=out_adm_res.getvalue(), file_name="Planilla_Resultados_Oficiales.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
+                
+                uploaded_res_file = st.file_uploader("Subir Excel de Resultados Oficiales:", type=["xlsx"], key="admin_res_upload")
+                if uploaded_res_file is not None:
+                    try:
+                        df_res_uploaded = pd.read_excel(uploaded_res_file, skiprows=4)
+                        DatabaseManager.importar_resultados_excel_admin(df_res_uploaded)
+                        st.success("¡Resultados cargados desde Excel exitosamente! Tabla de posiciones actualizada.")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Error procesando el Excel de resultados: {e}")
+        
+        st.markdown("---")
+        
+        col_adm1, col_adm2 = st.columns(2)
+        with col_adm1:
+            st.subheader("🛠️ Control del Fixture")
+            if st.button("🚀 Paso 1: Auto-Cargar 48 Selecciones del Mundial", use_container_width=True):
+                DatabaseManager.cargar_48_selecciones_oficiales()
+                st.success("Se inyectaron las 48 selecciones con sus respectivas banderas HD.")
+                st.rerun()
+            
+            if st.button("📅 Paso 2: Generar Fixture Fase de Grupos", use_container_width=True):
+                if DatabaseManager.generar_fixture_fase_grupos():
+                    st.success("Fixture de grupos creado correctamente (6 partidos por grupo).")
+                    st.rerun()
+                else:
+                    st.warning("El fixture de grupos ya estaba generado o faltan equipos.")
+
+            st.markdown("---")
+            st.subheader("### Habilitar Eliminación Directa (Mano a Mano)")
+            lista_eq = DatabaseManager.get_equipos_lista()
+            if lista_eq:
+                fase_sel = st.selectbox("Fase:", ["16avos", "8vos", "4tos", "Semi", "Final"])
+                eq_loc_id = st.selectbox("Selecciona Equipo Local:", [e[0] for e in lista_eq], format_func=lambda x: next(i[1] for i in lista_eq if i[0] == x))
+                eq_vis_id = st.selectbox("Selecciona Equipo Visitante:", [e[0] for e in lista_eq], format_func=lambda x: next(i[1] for i in lista_eq if i[0] == x), key="vis")
+                
+                if st.button("➕ Publicar Cruce de Eliminación", use_container_width=True):
+                    if eq_loc_id == eq_vis_id:
+                        st.error("Un equipo no puede jugar contra sí mismo.")
+                    else:
+                        DatabaseManager.insertar_partido_manual(fase_sel, eq_loc_id, eq_vis_id)
+                        st.success(f"Partido de {fase_sel} publicado con éxito.")
+                        st.rerun()
                         
         with col_adm2:
             st.subheader("⚙️ Configuración de Puntuación")
@@ -616,7 +708,6 @@ with tabs[2]:
             p_parc = st.number_input("Pts Goles de un Equipo", value=cfg[2])
             p_dif = st.number_input("Pts Diferencia de Goles", value=cfg[3])
             
-            # --- LÍNEAS CORREGIDAS COMPLETAMENTE ABAJO ---
             st.markdown("##### ⚔️ Puntos en Segunda Vuelta (Eliminación)")
             p_prode_ko = st.number_input("Pts Ganador KO", value=cfg[7])
             p_exact_ko = st.number_input("Pts Resultado Exacto KO", value=cfg[8])
@@ -628,7 +719,7 @@ with tabs[2]:
             id_l = st.text_input("ID de la Liga/Mundial:", value=cfg[5])
             new_pass = st.text_input("Nueva Clave Admin:", value=cfg[6])
             
-            if st.button("Guardar Cambios de Configuración"):
+            if st.button("Guardar Cambios de Configuración", use_container_width=True):
                 DatabaseManager.set_config(p_prode, p_exact, p_parc, p_dif, ak, id_l, new_pass, p_prode_ko, p_exact_ko, p_parc_ko, p_dif_ko)
                 st.success("Configuración guardada con éxito.")
                 st.rerun()
