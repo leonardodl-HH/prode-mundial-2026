@@ -5,6 +5,7 @@ import requests
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 import io
+import os
 
 DB_NAME = "prode_portable.db"
 
@@ -49,18 +50,35 @@ class DatabaseManager:
         conn.close()
 
     @staticmethod
-    def get_equipos():
-        conn = DatabaseManager.get_connection()
-        df = pd.read_sql_query("SELECT id_equipo, nombre, zona, archivo_bandera FROM equipos ORDER BY zona, nombre", conn)
-        conn.close()
-        return df
-
-    @staticmethod
-    def importar_equipos_excel(df):
+    def get_equipos_lista():
         conn = DatabaseManager.get_connection()
         cursor = conn.cursor()
-        for _, row in df.iterrows():
-            cursor.execute('INSERT OR IGNORE INTO equipos (nombre, zona, archivo_bandera) VALUES (?, ?, ?)', (str(row['Equipo']), str(row['Zona']), str(row['Archivo'])))
+        cursor.execute("SELECT id_equipo, nombre FROM equipos ORDER BY nombre")
+        datos = cursor.fetchall()
+        conn.close()
+        return datos
+
+    @staticmethod
+    def cargar_48_selecciones_oficiales():
+        conn = DatabaseManager.get_connection()
+        cursor = conn.cursor()
+        mapa_grupos = {
+            "A": ["México", "Estados Unidos", "Canadá", "Costa Rica"],
+            "B": ["Argentina", "Brasil", "Uruguay", "Colombia"],
+            "C": ["Francia", "Inglaterra", "España", "Alemania"],
+            "D": ["Portugal", "Italia", "Países Bajos", "Bélgica"],
+            "E": ["Croacia", "Marruecos", "Japón", "Senegal"],
+            "F": ["Ecuador", "Perú", "Chile", "Paraguay"],
+            "G": ["Ghana", "Camerún", "Túnez", "Argelia"],
+            "H": ["Corea del Sur", "Australia", "Irán", "Arabia Saudita"],
+            "I": ["Jamaica", "Panamá", "Honduras", "El Salvador"],
+            "J": ["Nigeria", "Costa de Marfil", "Egipto", "Mali"],
+            "K": ["Suiza", "Dinamarca", "Serbia", "Ucrania"],
+            "L": ["Polonia", "Suecia", "Escocia", "Gales"]
+        }
+        for grupo, selecciones in mapa_grupos.items():
+            for sel in selecciones:
+                cursor.execute('INSERT OR IGNORE INTO equipos (nombre, zona, archivo_bandera) VALUES (?, ?, "default.png")', (sel, grupo))
         conn.commit()
         conn.close()
 
@@ -88,6 +106,14 @@ class DatabaseManager:
         return True
 
     @staticmethod
+    def insertar_partido_manual(fase, id_local, id_visitante):
+        conn = DatabaseManager.get_connection()
+        cursor = conn.cursor()
+        cursor.execute('INSERT INTO partidos (fase, id_equipo_local, id_equipo_visitante) VALUES (?, ?, ?)', (fase, id_local, id_visitante))
+        conn.commit()
+        conn.close()
+
+    @staticmethod
     def get_partidos_con_nombres():
         conn = DatabaseManager.get_connection()
         query = '''
@@ -101,7 +127,16 @@ class DatabaseManager:
             FROM partidos p 
             JOIN equipos el ON p.id_equipo_local = el.id_equipo 
             JOIN equipos ev ON p.id_equipo_visitante = ev.id_equipo 
-            ORDER BY CASE WHEN p.fase LIKE 'Grupo%' THEN 1 ELSE 2 END, p.fase, p.id_partido
+            ORDER BY 
+                CASE 
+                    WHEN p.fase LIKE 'Grupo%' THEN 1 
+                    WHEN p.fase = '16avos' THEN 2
+                    WHEN p.fase = '8vos' THEN 3
+                    WHEN p.fase = '4tos' THEN 4
+                    WHEN p.fase = 'Semi' THEN 5
+                    WHEN p.fase = 'Final' THEN 6
+                    ELSE 7 
+                END, p.id_partido
         '''
         df = pd.read_sql_query(query, conn)
         conn.close()
@@ -129,18 +164,14 @@ class DatabaseManager:
         conn = DatabaseManager.get_connection()
         cursor = conn.cursor()
         for _, row in df.iterrows():
-            try:
-                id_partido = int(row['ID_Partition'])
-            except: 
-                try: id_partido = int(row['ID_Partido'])
-                except: continue
+            try: id_partido = int(row['ID_Partido'])
+            except: continue
             competidor = str(row['Competidor']).strip()
             cursor.execute("INSERT OR IGNORE INTO usuarios (nombre) VALUES (?)", (competidor,))
             cursor.execute("SELECT id_usuario FROM usuarios WHERE nombre = ?", (competidor,))
             id_usr = cursor.fetchone()[0]
             eq_l, eq_v = str(row['Local']).strip(), str(row['Visitante']).strip()
-            try:
-                goles_l, goles_v = int(row['Goles_L']), int(row['Goles_V'])
+            try: goles_l, goles_v = int(row['Goles_L']), int(row['Goles_V'])
             except: continue
             cursor.execute('''INSERT INTO apuestas (id_usuario, id_partido, apuesta_goles_local, apuesta_goles_visitante, equipo_l_predicho, equipo_v_predicho) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(id_usuario, id_partido) DO UPDATE SET apuesta_goles_local=excluded.apuesta_goles_local, apuesta_goles_visitante=excluded.apuesta_goles_visitante, equipo_l_predicho=excluded.equipo_l_predicho, equipo_v_predicho=excluded.equipo_v_predicho''', (id_usr, id_partido, goles_l, goles_v, eq_l, eq_v))
         conn.commit()
@@ -187,7 +218,6 @@ DatabaseManager.init_db()
 st.title("🏆 Prode Mundial 2026 — Dashboard en Vivo")
 st.markdown("Bienvenido al centro de estadísticas. Carga tus pronósticos y sigue los resultados en tiempo real.")
 
-# --- CORRECCIÓN: TABS SIN LA PALABRA ESPÍA ---
 tabs = st.tabs(["📊 Posiciones y Apuestas", "📤 Subir Mis Apuestas", "⚙️ Panel Administrador"])
 
 # ==========================================
@@ -202,7 +232,6 @@ with tabs[0]:
         st.dataframe(df_rank, use_container_width=True)
 
     with col2:
-        # --- CORRECCIÓN: SUBHEADER AJUSTADO A "VER APUESTAS" ---
         st.subheader("📊 Ver Apuestas")
         usuarios = DatabaseManager.get_usuarios()
         if usuarios:
@@ -218,7 +247,7 @@ with tabs[0]:
 # ==========================================
 with tabs[1]:
     st.subheader("📝 Envía tus Pronósticos")
-    st.write("Descarga la plantilla oficial espaciada, escribe tu nombre arriba en la celda amarilla, completa tus goles y vuelve a subirla acá.")
+    st.write("Descarga la plantilla oficial, escribe tu nombre arriba en la celda amarilla B3, completa tus goles y subila acá.")
     
     df_partidos = DatabaseManager.get_partidos_con_nombres()
     
@@ -309,21 +338,61 @@ with tabs[2]:
     if pass_input == cfg[6]:
         st.success("Acceso Administrador Autorizado")
         
+        # --- SECCIÓN NUEVA: SEGURIDAD DE LA BASE DE DATOS ---
+        st.markdown("### 💾 Copias de Seguridad (Anti-Reinicios de la Nube)")
+        c_seg1, c_seg2 = st.columns(2)
+        with c_seg1:
+            if os.path.exists(DB_NAME):
+                with open(DB_NAME, "rb") as f_db:
+                    st.download_button(label="📥 Descargar Respaldo Total del Prode (.db)", data=f_db.read(), file_name="prode_backup.db", mime="application/octet-stream")
+                st.caption("Recomendación: Descargá una copia a tu PC cada vez que tus amigos suban apuestas nuevas.")
+        with c_seg2:
+            arch_restaurar = st.file_uploader("Restaurar desde un Respaldo Anterior:", type=["db"])
+            if arch_restaurar is not None:
+                with open(DB_NAME, "wb") as f_db_w:
+                    f_db_w.write(arch_restaurar.getbuffer())
+                st.success("¡Base de datos restaurada con éxito! Reiniciando aplicación...")
+                st.rerun()
+        
+        st.markdown("---")
+        
         col_adm1, col_adm2 = st.columns(2)
         with col_adm1:
             st.subheader("🛠️ Control del Fixture")
-            if st.button("Generar Fase de Grupos Inicial"):
+            
+            # Botón de inyección automática de selecciones
+            if st.button("🚀 Paso 1: Auto-Cargar 48 Selecciones del Mundial"):
+                DatabaseManager.cargar_48_selecciones_oficiales()
+                st.success("Se inyectaron las 48 selecciones del Mundial organizadas de la Zona A a la L.")
+            
+            if st.button("📅 Paso 2: Generar Fixture Fase de Grupos"):
                 if DatabaseManager.generar_fixture_fase_grupos():
-                    st.success("Fixture de grupos creado correctamente.")
+                    st.success("Fixture de grupos creado correctamente (6 partidos por grupo).")
                     st.rerun()
                 else:
-                    st.warning("El fixture ya estaba generado.")
+                    st.warning("El fixture de grupos ya estaba generado o faltan equipos.")
+
+            st.markdown("---")
+            st.subheader("⚔️ Habilitar Eliminación Directa (Mano a Mano)")
+            lista_eq = DatabaseManager.get_equipos_lista()
+            if lista_eq:
+                fase_sel = st.selectbox("Fase:", ["16avos", "8vos", "4tos", "Semi", "Final"])
+                eq_loc_id = st.selectbox("Selecciona Equipo Local:", [e[0] for e in lista_eq], format_func=lambda x: next(i[1] for i in lista_eq if i[0] == x))
+                eq_vis_id = st.selectbox("Selecciona Equipo Visitante:", [e[0] for e in lista_eq], format_func=lambda x: next(i[1] for i in lista_eq if i[0] == x), key="vis")
+                
+                if st.button("➕ Publicar Cruce de Eliminación"):
+                    if eq_loc_id == eq_vis_id:
+                        st.error("Un equipo no puede jugar contra sí mismo.")
+                    else:
+                        DatabaseManager.insertar_partido_manual(fase_sel, eq_loc_id, eq_vis_id)
+                        st.success(f"Partido de {fase_sel} publicado. Ya está disponible en las plantillas de Excel.")
+                        st.rerun()
             
             st.markdown("---")
             st.subheader("🌐 Sincronización en la Nube (API)")
             if st.button("🔄 Sincronizar Resultados vía API Now"):
                 if not cfg[4]:
-                    st.error("Falta tu API Key en la configuración de abajo.")
+                    st.error("Falta tu API Key en la configuración de la derecha.")
                 else:
                     url = "https://v3.football.api-sports.io/fixtures"
                     headers = {"x-rapidapi-key": cfg[4], "x-rapidapi-host": "v3.football.api-sports.io"}
