@@ -1,0 +1,369 @@
+import streamlit as st
+import sqlite3
+import pandas as pd
+import requests
+import openpyxl
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+import io
+
+DB_NAME = "prode_portable.db"
+
+# --- CONFIGURACIÓN DE PÁGINA STREAMLIT ---
+st.set_page_config(page_title="Prode Mundial 2026", page_icon="⚽", layout="wide")
+
+class DatabaseManager:
+    @staticmethod
+    def get_connection():
+        return sqlite3.connect(DB_NAME)
+
+    @staticmethod
+    def init_db():
+        conn = DatabaseManager.get_connection()
+        cursor = conn.cursor()
+        cursor.execute('''CREATE TABLE IF NOT EXISTS equipos (id_equipo INTEGER PRIMARY KEY AUTOINCREMENT, nombre TEXT UNIQUE NOT NULL, zona TEXT NOT NULL, archivo_bandera TEXT DEFAULT 'default.png')''')
+        cursor.execute('''CREATE TABLE IF NOT EXISTS partidos (id_partido INTEGER PRIMARY KEY AUTOINCREMENT, fase TEXT NOT NULL, id_equipo_local INTEGER, id_equipo_visitante INTEGER, goles_local INTEGER DEFAULT NULL, goles_visitante INTEGER DEFAULT NULL, FOREIGN KEY(id_equipo_local) REFERENCES equipos(id_equipo), FOREIGN KEY(id_equipo_visitante) REFERENCES equipos(id_equipo))''')
+        cursor.execute('''CREATE TABLE IF NOT EXISTS usuarios (id_usuario INTEGER PRIMARY KEY AUTOINCREMENT, nombre TEXT UNIQUE NOT NULL)''')
+        cursor.execute('''CREATE TABLE IF NOT EXISTS apuestas (id_apuesta INTEGER PRIMARY KEY AUTOINCREMENT, id_usuario INTEGER, id_partido INTEGER, apuesta_goles_local INTEGER DEFAULT NULL, apuesta_goles_visitante INTEGER DEFAULT NULL, equipo_l_predicho TEXT, equipo_v_predicho TEXT, puntos_obtenidos REAL DEFAULT 0.0, FOREIGN KEY(id_usuario) REFERENCES usuarios(id_usuario), FOREIGN KEY(id_partido) REFERENCES partidos(id_partido), UNIQUE(id_usuario, id_partido))''')
+        cursor.execute('''CREATE TABLE IF NOT EXISTS configuracion (id INTEGER PRIMARY KEY, pts_prode INTEGER, pts_exacto INTEGER, pts_parcial INTEGER, pts_dif INTEGER, api_key TEXT, id_liga TEXT, admin_pass TEXT)''')
+        cursor.execute("SELECT COUNT(*) FROM configuracion")
+        if cursor.fetchone()[0] == 0:
+            cursor.execute("INSERT INTO configuracion (id, pts_prode, pts_exacto, pts_parcial, pts_dif, api_key, id_liga, admin_pass) VALUES (1, 4, 3, 1, 1, '', '1', 'admin123')")
+        conn.commit()
+        conn.close()
+
+    @staticmethod
+    def get_config():
+        conn = DatabaseManager.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT pts_prode, pts_exacto, pts_parcial, pts_dif, api_key, id_liga, admin_pass FROM configuracion WHERE id = 1")
+        datos = cursor.fetchone()
+        conn.close()
+        return datos
+
+    @staticmethod
+    def set_config(p_prode, p_exacto, p_parcial, p_dif, api_key, id_liga, admin_pass):
+        conn = DatabaseManager.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("UPDATE configuracion SET pts_prode=?, pts_exacto=?, pts_parcial=?, pts_dif=?, api_key=?, id_liga=?, admin_pass=? WHERE id=1", (p_prode, p_exacto, p_parcial, p_dif, api_key, id_liga, admin_pass))
+        conn.commit()
+        conn.close()
+
+    @staticmethod
+    def get_equipos():
+        conn = DatabaseManager.get_connection()
+        df = pd.read_sql_query("SELECT id_equipo, nombre, zona, archivo_bandera FROM equipos ORDER BY zona, nombre", conn)
+        conn.close()
+        return df
+
+    @staticmethod
+    def importar_equipos_excel(df):
+        conn = DatabaseManager.get_connection()
+        cursor = conn.cursor()
+        for _, row in df.iterrows():
+            cursor.execute('INSERT OR IGNORE INTO equipos (nombre, zona, archivo_bandera) VALUES (?, ?, ?)', (str(row['Equipo']), str(row['Zona']), str(row['Archivo'])))
+        conn.commit()
+        conn.close()
+
+    @staticmethod
+    def generar_fixture_fase_grupos():
+        conn = DatabaseManager.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM partidos WHERE fase LIKE 'Grupo%'")
+        if cursor.fetchone()[0] > 0: 
+            conn.close()
+            return False
+        cursor.execute("SELECT id_equipo, zona FROM equipos ORDER BY zona, id_equipo")
+        equipos = cursor.fetchall()
+        zonas = {}
+        for eq in equipos:
+            zonas.setdefault(eq[1], []).append(eq[0])
+        partidos = []
+        for zona, ids in zonas.items():
+            if len(ids) == 4:
+                cruces = [(ids[0], ids[1]), (ids[2], ids[3]), (ids[0], ids[2]), (ids[1], ids[3]), (ids[0], ids[3]), (ids[1], ids[2])]
+                for l, v in cruces: partidos.append((f"Grupo {zona}", l, v))
+        cursor.executemany('INSERT INTO partidos (fase, id_equipo_local, id_equipo_visitante) VALUES (?, ?, ?)', partidos)
+        conn.commit()
+        conn.close()
+        return True
+
+    @staticmethod
+    def get_partidos_con_nombres():
+        conn = DatabaseManager.get_connection()
+        query = '''
+            SELECT 
+                p.id_partido as id_partido, 
+                p.fase as Fase, 
+                el.nombre as Local, 
+                p.goles_local as goles_local, 
+                p.goles_visitante as goles_visitante, 
+                ev.nombre as Visitante 
+            FROM partidos p 
+            JOIN equipos el ON p.id_equipo_local = el.id_equipo 
+            JOIN equipos ev ON p.id_equipo_visitante = ev.id_equipo 
+            ORDER BY CASE WHEN p.fase LIKE 'Grupo%' THEN 1 ELSE 2 END, p.fase, p.id_partido
+        '''
+        df = pd.read_sql_query(query, conn)
+        conn.close()
+        return df
+
+    @staticmethod
+    def guardar_resultado(id_partido, goles_l, goles_v):
+        conn = DatabaseManager.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("UPDATE partidos SET goles_local = ?, goles_visitante = ? WHERE id_partido = ?", (goles_l, goles_v, id_partido))
+        conn.commit()
+        conn.close()
+
+    @staticmethod
+    def get_usuarios():
+        conn = DatabaseManager.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT nombre FROM usuarios ORDER BY nombre")
+        datos = [r[0] for r in cursor.fetchall()]
+        conn.close()
+        return datos
+
+    @staticmethod
+    def importar_apuestas_excel(df):
+        conn = DatabaseManager.get_connection()
+        cursor = conn.cursor()
+        for _, row in df.iterrows():
+            try:
+                id_partido = int(row['ID_Partition'])
+            except: 
+                try: id_partido = int(row['ID_Partido'])
+                except: continue
+            competidor = str(row['Competidor']).strip()
+            cursor.execute("INSERT OR IGNORE INTO usuarios (nombre) VALUES (?)", (competidor,))
+            cursor.execute("SELECT id_usuario FROM usuarios WHERE nombre = ?", (competidor,))
+            id_usr = cursor.fetchone()[0]
+            eq_l, eq_v = str(row['Local']).strip(), str(row['Visitante']).strip()
+            try:
+                goles_l, goles_v = int(row['Goles_L']), int(row['Goles_V'])
+            except: continue
+            cursor.execute('''INSERT INTO apuestas (id_usuario, id_partido, apuesta_goles_local, apuesta_goles_visitante, equipo_l_predicho, equipo_v_predicho) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(id_usuario, id_partido) DO UPDATE SET apuesta_goles_local=excluded.apuesta_goles_local, apuesta_goles_visitante=excluded.apuesta_goles_visitante, equipo_l_predicho=excluded.equipo_l_predicho, equipo_v_predicho=excluded.equipo_v_predicho''', (id_usr, id_partido, goles_l, goles_v, eq_l, eq_v))
+        conn.commit()
+        conn.close()
+
+    @staticmethod
+    def calcular_ranking_avanzado():
+        conn = DatabaseManager.get_connection()
+        cursor = conn.cursor()
+        cursor.execute('''SELECT p.id_partido, p.fase, el.nombre, ev.nombre, p.goles_local, p.goles_visitante FROM partidos p JOIN equipos el ON p.id_equipo_local = el.id_equipo JOIN equipos ev ON p.id_equipo_visitante = ev.id_equipo WHERE p.goles_local IS NOT NULL''')
+        partidos_jugados = cursor.fetchall()
+        for id_partido, fase, real_l_nombre, real_v_nombre, real_l_gol, real_v_gol in partidos_jugados:
+            cursor.execute("SELECT id_usuario, apuesta_goles_local, apuesta_goles_visitante, equipo_l_predicho, equipo_v_predicho FROM apuestas WHERE id_partido = ? AND apuesta_goles_local IS NOT NULL", (id_partido,))
+            apuestas = cursor.fetchall()
+            res_real = 1 if real_l_gol > real_v_gol else (0 if real_l_gol == real_v_gol else -1)
+            for id_user, ap_l_gol, ap_v_gol, ap_l_nombre, ap_v_nombre in apuestas:
+                puntos_totales = 0.0
+                res_ap = 1 if ap_l_gol > ap_v_gol else (0 if ap_l_gol == ap_v_gol else -1)
+                puntos_base = 0.0
+                if res_real == res_ap:
+                    puntos_base += 4.0
+                    if real_l_gol == ap_l_gol and real_v_gol == ap_v_gol: puntos_base += 3.0
+                    else:
+                        if real_l_gol == ap_l_gol or real_v_gol == ap_v_gol: puntos_base += 1.0
+                        if (real_l_gol - real_v_gol) == (ap_l_gol - ap_v_gol): puntos_base += 1.0
+                puntos_totales = puntos_base
+                cursor.execute("UPDATE apuestas SET puntos_obtenidos = ? WHERE id_usuario = ? AND id_partido = ?", (puntos_totales, id_user, id_partido))
+        conn.commit()
+        df_rank = pd.read_sql_query('SELECT u.nombre as Competidor, COALESCE(SUM(a.puntos_obtenidos), 0) as Puntos FROM usuarios u LEFT JOIN apuestas a ON u.id_usuario = a.id_usuario GROUP BY u.id_usuario ORDER BY Puntos DESC, u.nombre ASC', conn)
+        conn.close()
+        return df_rank
+
+    @staticmethod
+    def get_apuestas_usuario_web(nombre_usuario):
+        conn = DatabaseManager.get_connection()
+        query = '''SELECT p.fase as Fase, a.equipo_l_predicho as Local, a.apuesta_goles_local as [GL Pred], a.apuesta_goles_visitante as [GV Pred], a.equipo_v_predicho as Visitante, p.goles_local as [GL Real], p.goles_visitante as [GV Real], a.puntos_obtenidos as [Pts Ganados] FROM apuestas a JOIN usuarios u ON a.id_usuario = u.id_usuario JOIN partidos p ON a.id_partido = p.id_partido WHERE u.nombre = ?'''
+        df = pd.read_sql_query(query, conn, params=(nombre_usuario,))
+        conn.close()
+        return df
+
+# --- INICIALIZACIÓN ---
+DatabaseManager.init_db()
+
+st.title("🏆 Prode Mundial 2026 — Dashboard en Vivo")
+st.markdown("Bienvenido al centro de estadísticas. Carga tus pronósticos y sigue los resultados en tiempo real.")
+
+# --- CORRECCIÓN: TABS SIN LA PALABRA ESPÍA ---
+tabs = st.tabs(["📊 Posiciones y Apuestas", "📤 Subir Mis Apuestas", "⚙️ Panel Administrador"])
+
+# ==========================================
+# TAB 1: DASHBOARD PÚBLICO
+# ==========================================
+with tabs[0]:
+    col1, col2 = st.columns([1, 2])
+    with col1:
+        st.subheader("⭐ Tabla de Posiciones")
+        df_rank = DatabaseManager.calcular_ranking_avanzado()
+        df_rank.index = df_rank.index + 1
+        st.dataframe(df_rank, use_container_width=True)
+
+    with col2:
+        # --- CORRECCIÓN: SUBHEADER AJUSTADO A "VER APUESTAS" ---
+        st.subheader("📊 Ver Apuestas")
+        usuarios = DatabaseManager.get_usuarios()
+        if usuarios:
+            user_sel = st.selectbox("Selecciona un competidor para desplegar su juego:", usuarios)
+            if user_sel:
+                df_user_ap = DatabaseManager.get_apuestas_usuario_web(user_sel)
+                st.dataframe(df_user_ap, use_container_width=True, hide_index=True)
+        else:
+            st.info("Aún no hay usuarios cargados en el sistema.")
+
+# ==========================================
+# TAB 2: USER CARGA APUESTAS
+# ==========================================
+with tabs[1]:
+    st.subheader("📝 Envía tus Pronósticos")
+    st.write("Descarga la plantilla oficial espaciada, escribe tu nombre arriba en la celda amarilla, completa tus goles y vuelve a subirla acá.")
+    
+    df_partidos = DatabaseManager.get_partidos_con_nombres()
+    
+    if not df_partidos.empty:
+        wb = openpyxl.Workbook(); ws = wb.active; ws.title = "Apuestas"
+        ws.views.sheetView[0].showGridLines = True
+        
+        ws.merge_cells("A1:F1"); ws["A1"] = "PRODE MUNDIAL - FORMULARIO"
+        ws["A1"].font = Font(name="Arial", size=14, bold=True, color="FFFFFF")
+        ws["A1"].fill = PatternFill(start_color="2F4F4F", end_color="2F4F4F", fill_type="solid")
+        ws["A1"].alignment = Alignment(horizontal="center", vertical="center")
+        ws.row_dimensions[1].height = 35
+        
+        ws["A3"] = "COMPETIDOR (Nombre):"; ws["A3"].font = Font(name="Arial", size=11, bold=True)
+        ws["B3"] = "[Escriba su nombre aquí]"
+        ws["B3"].fill = PatternFill(start_color="FFF8DC", end_color="FFF8DC", fill_type="solid")
+        
+        thin = Border(left=Side(style='thin', color='A9A9A9'), right=Side(style='thin', color='A9A9A9'), top=Side(style='thin', color='A9A9A9'), bottom=Side(style='thin', color='A9A9A9'))
+        thick_bot = Border(left=Side(style='thin', color='A9A9A9'), right=Side(style='thin', color='A9A9A9'), top=Side(style='thin', color='A9A9A9'), bottom=Side(style='medium', color='000000'))
+        ws["B3"].border = thin
+        
+        headers = ['ID_Partido', 'Fase', 'Local', 'Goles_L', 'Goles_V', 'Visitante']
+        for col_num, h in enumerate(headers, 1):
+            c = ws.cell(row=5, column=col_num, value=h)
+            c.font = Font(name="Arial", size=11, bold=True, color="FFFFFF"); c.fill = PatternFill(start_color="4682B4", end_color="4682B4", fill_type="solid")
+            c.alignment = Alignment(horizontal="center", vertical="center"); c.border = thin
+        ws.row_dimensions[5].height = 30
+        
+        zebra = PatternFill(start_color="F9F9F9", end_color="F9F9F9", fill_type="solid")
+        row_num = 6
+        prev_fase = None
+        
+        for i, r in df_partidos.iterrows():
+            current_fase = r['Fase']
+            if prev_fase and current_fase != prev_fase:
+                for col_num in range(1, 7): ws.cell(row=row_num-1, column=col_num).border = thick_bot
+            
+            ws.row_dimensions[row_num].height = 24
+            ws.cell(row=row_num, column=1, value=r['id_partido']).alignment = Alignment(horizontal="center", vertical="center")
+            ws.cell(row=row_num, column=2, value=r['Fase']).alignment = Alignment(horizontal="center", vertical="center")
+            ws.cell(row=row_num, column=3, value=r['Local']).alignment = Alignment(horizontal="left", vertical="center")
+            ws.cell(row=row_num, column=4, value="")
+            ws.cell(row=row_num, column=5, value="")
+            ws.cell(row=row_num, column=6, value=r['Visitante']).alignment = Alignment(horizontal="left", vertical="center")
+            
+            for col_num in range(1, 7):
+                cell = ws.cell(row=row_num, column=col_num)
+                cell.font = Font(name="Arial", size=11)
+                if cell.border != thick_bot: cell.border = thin
+                if i % 2 == 1 and col_num not in [4, 5]: cell.fill = zebra
+            prev_fase = current_fase; row_num += 1
+            
+        for col_num in range(1, 7): ws.cell(row=row_num-1, column=col_num).border = thick_bot
+        ws.column_dimensions['A'].width = 12; ws.column_dimensions['B'].width = 18
+        ws.column_dimensions['C'].width = 25; ws.column_dimensions['D'].width = 14
+        ws.column_dimensions['E'].width = 14; ws.column_dimensions['F'].width = 25
+        
+        out = io.BytesIO()
+        wb.save(out)
+        
+        st.download_button(label="📥 Descargar Plantilla de Apuestas Estilizada", data=out.getvalue(), file_name="Plantilla_Apuestas_Mundial.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        
+        st.markdown("---")
+        uploaded_file = st.file_uploader("Sube tu Excel completado aquí:", type=["xlsx"])
+        if uploaded_file is not None:
+            try:
+                df_meta = pd.read_excel(uploaded_file, nrows=3, header=None)
+                competidor = str(df_meta.iloc[2, 1]).strip()
+                if not competidor or competidor == "nan" or competidor == "[Escriba su nombre aquí]":
+                    st.error("Error: Olvidaste escribir tu nombre en la celda amarilla B3.")
+                else:
+                    df_user = pd.read_excel(uploaded_file, skiprows=4)
+                    df_user['Competidor'] = competidor
+                    DatabaseManager.importar_apuestas_excel(df_user)
+                    st.success(f"¡Excelente! Procesamos las apuestas de '{competidor}' con éxito.")
+            except Exception as e:
+                st.error(f"Error procesando el archivo: {e}")
+    else:
+        st.warning("El administrador aún no ha generado el fixture del torneo.")
+
+# ==========================================
+# TAB 3: ADMIN PANEL (PROTEGIDO)
+# ==========================================
+with tabs[2]:
+    cfg = DatabaseManager.get_config()
+    pass_input = st.text_input("Ingresa la Contraseña de Administrador:", type="password")
+    
+    if pass_input == cfg[6]:
+        st.success("Acceso Administrador Autorizado")
+        
+        col_adm1, col_adm2 = st.columns(2)
+        with col_adm1:
+            st.subheader("🛠️ Control del Fixture")
+            if st.button("Generar Fase de Grupos Inicial"):
+                if DatabaseManager.generar_fixture_fase_grupos():
+                    st.success("Fixture de grupos creado correctamente.")
+                    st.rerun()
+                else:
+                    st.warning("El fixture ya estaba generado.")
+            
+            st.markdown("---")
+            st.subheader("🌐 Sincronización en la Nube (API)")
+            if st.button("🔄 Sincronizar Resultados vía API Now"):
+                if not cfg[4]:
+                    st.error("Falta tu API Key en la configuración de abajo.")
+                else:
+                    url = "https://v3.football.api-sports.io/fixtures"
+                    headers = {"x-rapidapi-key": cfg[4], "x-rapidapi-host": "v3.football.api-sports.io"}
+                    try:
+                        res = requests.get(url, headers=headers, params={"league": cfg[5], "season": "2026"})
+                        fixtures = res.json().get("response", [])
+                        df_p = DatabaseManager.get_partidos_con_nombres()
+                        count = 0
+                        for f in fixtures:
+                            if f["fixture"]["status"]["short"] in ["FT", "AET", "PEN"]:
+                                al = f["teams"]["home"]["name"].lower()
+                                av = f["teams"]["away"]["name"].lower()
+                                gl, gv = f["goals"]["home"], f["goals"]["away"]
+                                for idx, row in df_p.iterrows():
+                                    if al in row['Local'].lower() and av in row['Visitante'].lower():
+                                        DatabaseManager.guardar_resultado(int(row['id_partido']), gl, gv)
+                                        count += 1
+                        st.success(f"Sincronización terminada. {count} partidos actualizados.")
+                    except Exception as e:
+                        st.error(f"Error de conexión: {e}")
+                        
+        with col_adm2:
+            st.subheader("⚙️ Credenciales y Llaves")
+            p_prode = st.number_input("Pts Ganador (Prode)", value=cfg[0])
+            p_exact = st.number_input("Pts Resultado Exacto", value=cfg[1])
+            p_parc = st.number_input("Pts Goles de un Equipo", value=cfg[2])
+            p_dif = st.number_input("Pts Diferencia de Goles", value=cfg[3])
+            ak = st.text_input("API Key de API-Football:", value=cfg[4])
+            id_l = st.text_input("ID de la Liga/Mundial:", value=cfg[5])
+            new_pass = st.text_input("Nueva Clave Admin:", value=cfg[6])
+            
+            if st.button("Guardar Cambios de Configuración"):
+                DatabaseManager.set_config(p_prode, p_exact, p_parc, p_dif, ak, id_l, new_pass)
+                st.success("Configuración del sistema guardada con éxito.")
+                st.rerun()
+                
+        st.markdown("---")
+        st.subheader("📊 Grilla de Partidos Actuales")
+        df_adm_partidos = DatabaseManager.get_partidos_con_nombres()
+        st.dataframe(df_adm_partidos, use_container_width=True, hide_index=True)
+    else:
+        if pass_input:
+            st.error("Contraseña incorrecta.")
