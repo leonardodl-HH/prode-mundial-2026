@@ -11,7 +11,7 @@ from datetime import datetime
 # --- CONFIGURACIÓN DE PÁGINA STREAMLIT ---
 st.set_page_config(page_title="Prode Mundial 2026", page_icon="⚽", layout="wide")
 
-# --- INYECCIÓN DE DISEÑO ABSOLUTO: ELIMINA BLOQUES NEGROS Y FUERZA MODO CLARO NITIDO ---
+# --- INYECCIÓN DE DISEÑO ABSOLUTO: ELIMINA MENÚS NEGROS Y FUERZA MODO CLARO TOTAL ---
 st.markdown("""
     <style>
     /* Fondo global de la aplicación y textos base */
@@ -25,8 +25,8 @@ st.markdown("""
         color: #1F2937 !important;
     }
     
-    /* Blanqueo total de casilleros de texto, contraseñas y números */
-    input, textarea, div[data-baseweb="input"], div[data-baseweb="base-input"] {
+    /* Blanqueo total de casilleros de texto, contraseñas y números (inputs) */
+    input, textarea, div[data-baseweb="input"], div[data-baseweb="base-input"], div[data-baseweb="input-control"] {
         background-color: #F9FAFB !important;
         color: #1F2937 !important;
         border: 1px solid #D1D5DB !important;
@@ -34,6 +34,12 @@ st.markdown("""
     
     div[data-baseweb="input"] input {
         background-color: transparent !important;
+        color: #1F2937 !important;
+    }
+    
+    /* Forzado de fondo blanco para el Panel Administrador */
+    .stTextInput input, .stNumberInput input, .stPasswordInput input {
+        background-color: #F9FAFB !important;
         color: #1F2937 !important;
     }
     
@@ -61,7 +67,7 @@ st.markdown("""
         border: 1px solid #D1D5DB !important;
     }
     
-    /* Botones generales de acción de la plataforma (Azul Deportivo) */
+    /* Botones generales de acción de la plataforma (Azul Corporativo) */
     button[data-testid="baseButton-secondary"], button[data-testid="baseButton-primary"] {
         background-color: #007BFF !important;
         color: #FFFFFF !important;
@@ -231,14 +237,15 @@ class DatabaseManager:
         conn.close()
         return datos
 
+    # --- REPARADO PARA ENCABEZADOS PERFECTOS NATIVOS ---
     @staticmethod
     def get_partidos_con_nombres():
         conn = DatabaseManager.get_connection()
         cursor = conn.cursor()
         query = '''
             SELECT 
-                p.id_partido as "id_partido", p.fase as "Fase", el.archivo_bandera as "bandera_l", el.nombre as "Local", 
-                p.goles_local as "GL Real", p.goles_visitante as "GV Real", ev.nombre as "Visitante", ev.archivo_bandera as "bandera_v"
+                p.id_partido as "ID", p.fase as "Fase", el.archivo_bandera as "Local Flag", el.nombre as "Local", 
+                p.goles_local as "GL Real", p.goles_visitante as "GV Real", ev.nombre as "Visitante", ev.archivo_bandera as "Visitante Flag"
             FROM partidos p 
             JOIN equipos el ON p.id_equipo_local = el.id_equipo 
             JOIN equipos ev ON p.id_equipo_visitante = ev.id_equipo 
@@ -342,7 +349,7 @@ class DatabaseManager:
     def get_apuestas_usuario_web(nombre_usuario):
         conn = DatabaseManager.get_connection()
         cursor = conn.cursor()
-        query = '''SELECT p.fase as "Fase", el.archivo_bandera as "bandera_l", a.equipo_l_predicho as "Local", a.apuesta_goles_local as "GL Pred", a.apuesta_goles_visitante as "GV Pred", a.equipo_v_predicho as "Visitante", ev.archivo_bandera as "bandera_v", p.goles_local as "GL Real", p.goles_visitante as "GV Real", a.puntos_obtenidos as "Pts Ganados" FROM apuestas a JOIN usuarios u ON a.id_usuario = u.id_usuario JOIN partidos p ON a.id_partido = p.id_partido JOIN equipos el ON p.id_equipo_local = el.id_equipo JOIN equipos ev ON p.id_equipo_visitante = ev.id_equipo WHERE u.nombre = %s'''
+        query = '''SELECT p.fase as "Fase", el.archivo_bandera as "Local Flag", a.equipo_l_predicho as "Local", a.apuesta_goles_local as "GL Pred", a.apuesta_goles_visitante as "GV Pred", a.equipo_v_predicho as "Visitante", ev.archivo_bandera as "Visitante Flag", p.goles_local as "GL Real", p.goles_visitante as "GV Real", a.puntos_obtenidos as "Pts Ganados" FROM apuestas a JOIN usuarios u ON a.id_usuario = u.id_usuario JOIN partidos p ON a.id_partido = p.id_partido JOIN equipos el ON p.id_equipo_local = el.id_equipo JOIN equipos ev ON p.id_equipo_visitante = ev.id_equipo WHERE u.nombre = %s'''
         cursor.execute(query, (nombre_usuario,))
         columns = [desc[0] for desc in cursor.description]
         df = pd.DataFrame(cursor.fetchall(), columns=columns)
@@ -362,6 +369,9 @@ class DatabaseManager:
 
 # --- INICIALIZACIÓN ---
 DatabaseManager.init_db()
+
+st.title("🏆 Prode Mundial 2026 — Dashboard en Vivo")
+st.markdown("Bienvenido al centro de estadísticas profesional. MODO CLARO TOTAL ACTIVADO.")
 
 tabs = st.tabs(["📊 Posiciones y Apuestas", "📤 Subir Mis Apuestas", "⚙️ Panel Administrador"])
 
@@ -392,14 +402,14 @@ with tabs[0]:
         if not df_public_partidos.empty:
             # --- RENDERIZADO NATIVO PERFECTO: EVITA FILAS NEGRAS EN CANVAS ---
             st.dataframe(df_public_partidos, use_container_width=True, hide_index=True, column_config={
-                "id_partido": st.column_config.NumberColumn(label="ID"),
+                "ID": st.column_config.NumberColumn(label="ID"),
                 "Fase": st.column_config.TextColumn(label="Fase"),
-                "bandera_l": st.column_config.ImageColumn(label="🏳️"), 
+                "Local Flag": st.column_config.ImageColumn(label="🏳️"), 
                 "Local": st.column_config.TextColumn(label="Local"), 
                 "GL Real": st.column_config.NumberColumn(label="GL"), 
                 "GV Real": st.column_config.NumberColumn(label="GV"),
                 "Visitante": st.column_config.TextColumn(label="Visitante"),
-                "bandera_v": st.column_config.ImageColumn(label="🏳️")
+                "Visitante Flag": st.column_config.ImageColumn(label="🏳️")
             })
         else: st.info("El fixture todavía no fue generado.")
 
@@ -414,12 +424,12 @@ with tabs[0]:
                 if not df_user_ap.empty:
                     st.dataframe(df_user_ap, use_container_width=True, hide_index=True, column_config={
                         "Fase": st.column_config.TextColumn(label="Fase"),
-                        "bandera_l": st.column_config.ImageColumn(label="🏳️"),
+                        "Local Flag": st.column_config.ImageColumn(label="🏳️"),
                         "Local": st.column_config.TextColumn(label="Local"),
                         "GL Pred": st.column_config.NumberColumn(label="GL Pred"),
                         "GV Pred": st.column_config.NumberColumn(label="GV Pred"),
                         "Visitante": st.column_config.TextColumn(label="Visitante"),
-                        "bandera_v": st.column_config.ImageColumn(label="🏳️"),
+                        "Visitante Flag": st.column_config.ImageColumn(label="🏳️"),
                         "GL Real": st.column_config.NumberColumn(label="GL Real"),
                         "GV Real": st.column_config.NumberColumn(label="GV Real"),
                         "Pts Ganados": st.column_config.NumberColumn(label="Pts Ganados")
@@ -455,7 +465,7 @@ with tabs[1]:
             if prev_fase and r['Fase'] != prev_fase:
                 for col_num in range(1, 7): ws.cell(row=row_num-1, column=col_num).border = thick_bot
             ws.row_dimensions[row_num].height = 24
-            ws.cell(row=row_num, column=1, value=r['id_partido']).alignment = Alignment(horizontal="center")
+            ws.cell(row=row_num, column=1, value=r['ID']).alignment = Alignment(horizontal="center")
             ws.cell(row=row_num, column=2, value=r['Fase']).alignment = Alignment(horizontal="center")
             ws.cell(row=row_num, column=3, value=r['Local'])
             ws.cell(row=row_num, column=6, value=r['Visitante'])
@@ -488,6 +498,7 @@ with tabs[1]:
 # ==========================================
 with tabs[2]:
     cfg = DatabaseManager.get_config()
+    # --- RENDERIZADO NATIVO PERFECTO: EVITA BLOQUES NEGROS EN CANVAS ---
     pass_input = st.text_input("Ingresa la Contraseña de Administrador:", type="password")
     if pass_input == cfg[6]:
         st.success("Conexión Segura con PostgreSQL Cloud En Línea")
@@ -543,6 +554,7 @@ with tabs[2]:
         col_res1, col_res2 = st.columns(2)
         with col_res1:
             st.markdown("##### 🌐 Opción Principal: Sincronización Automática")
+            # --- RENDERIZADO NATIVO PERFECTO: EVITA BLOQUES NEGROS EN CANVAS ---
             if st.button("🔄 Sincronizar Resultados vía API Now", use_container_width=True):
                 if not cfg[4]: st.error("Error: Falta tu API Key.")
                 else:
@@ -553,7 +565,7 @@ with tabs[2]:
                             if f["fixture"]["status"]["short"] in ["FT", "AET", "PEN"]:
                                 al, av, gl, gv = f["teams"]["home"]["name"].lower(), f["teams"]["away"]["name"].lower(), f["goals"]["home"], f["goals"]["away"]
                                 for idx, row in df_p.iterrows():
-                                    if al in row['Local'].lower() and av in row['Visitante'].lower(): DatabaseManager.guardar_resultado(int(row['id_partido']), gl, gv); count += 1
+                                    if al in row['Local'].lower() and av in row['Visitante'].lower(): DatabaseManager.guardar_resultado(int(row['ID']), gl, gv); count += 1
                         st.success(f"¡Sincronización terminada! {count} partidos actualizados."); st.rerun()
                     except Exception as e: st.error(f"Error de API: {e}")
         with col_res2:
@@ -569,7 +581,7 @@ with tabs[2]:
                 
                 row_n = 6
                 for _, r in df_actual_goles.iterrows():
-                    ws_adm_res.cell(row=row_n, column=1, value=r['id_partido']).alignment = Alignment(horizontal="center")
+                    ws_adm_res.cell(row=row_n, column=1, value=r['ID']).alignment = Alignment(horizontal="center")
                     ws_adm_res.cell(row=row_n, column=2, value=r['Fase']).alignment = Alignment(horizontal="center")
                     ws_adm_res.cell(row=row_n, column=3, value=r['Local'])
                     ws_adm_res.cell(row=row_n, column=4, value="" if pd.isna(r['GL Real']) else int(r['GL Real'])).alignment = Alignment(horizontal="center")
@@ -581,6 +593,7 @@ with tabs[2]:
                     row_n += 1
                 ws_adm_res.column_dimensions['A'].width = 12; ws_adm_res.column_dimensions['B'].width = 15; ws_adm_res.column_dimensions['C'].width = 22; ws_adm_res.column_dimensions['D'].width = 12; ws_adm_res.column_dimensions['E'].width = 12; ws_adm_res.column_dimensions['F'].width = 22
                 out_adm_res = io.BytesIO(); wb_adm_res.save(out_adm_res)
+                # --- RENDERIZADO NATIVO PERFECTO: EVITA BLOQUES NEGROS EN CANVAS ---
                 st.download_button(label="📥 Descargar Planilla de Resultados Reales", data=out_adm_res.getvalue(), file_name="Planilla_Resultados_Oficiales.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
                 uploaded_res_file = st.file_uploader("Subir Excel de Resultados Oficiales:", type=["xlsx"], key="admin_res_upload")
                 if uploaded_res_file is not None:
@@ -595,9 +608,11 @@ with tabs[2]:
             st.subheader("### Habilitar Eliminación Directa (Mano a Mano)")
             lista_eq = DatabaseManager.get_equipos_lista()
             if lista_eq:
+                # --- RENDERIZADO NATIVO PERFECTO: EVITA BLOQUES NEGROS EN CANVAS ---
                 fase_sel = st.selectbox("Fase:", ["16avos", "8vos", "4tos", "Semi", "Final"])
                 eq_loc_id = st.selectbox("Selecciona Equipo Local:", [e[0] for e in lista_eq], format_func=lambda x: next(i[1] for i in lista_eq if i[0] == x))
                 eq_vis_id = st.selectbox("Selecciona Equipo Visitante:", [e[0] for e in lista_eq], format_func=lambda x: next(i[1] for i in lista_eq if i[0] == x), key="vis")
+                # --- RENDERIZADO NATIVO PERFECTO: EVITA BLOQUES NEGROS EN CANVAS ---
                 if st.button("➕ Publicar Cruce de Eliminación", use_container_width=True):
                     if eq_loc_id == eq_vis_id: st.error("Un equipo no puede jugar contra sí mismo.")
                     else: DatabaseManager.insertar_partido_manual(fase_sel, eq_loc_id, eq_vis_id); st.success(f"Partido de {fase_sel} publicado."); st.rerun()
@@ -605,10 +620,12 @@ with tabs[2]:
         with col_adm2:
             st.subheader("⚙️ Configuración de Puntuación y Sistema")
             st.markdown("##### 🏟️ Fase de Grupos / ⚔️ Segunda Vuelta KO")
+            # --- RENDERIZADO NATIVO PERFECTO: EVITA BLOQUES NEGROS EN CANVAS ---
             p_prode = st.number_input("Pts Ganador", value=cfg[0]); p_exact = st.number_input("Pts Exacto", value=cfg[1]); p_parc = st.number_input("Pts Goles", value=cfg[2]); p_dif = st.number_input("Pts Diferencia", value=cfg[3])
             p_prode_ko = st.number_input("Pts Ganador KO", value=cfg[7]); p_exact_ko = st.number_input("Pts Exacto KO", value=cfg[8]); p_parc_ko = st.number_input("Pts Goles KO", value=cfg[9]); p_dif_ko = st.number_input("Pts Diferencia KO", value=cfg[10])
             st.markdown("##### 🔑 Credenciales, Llaves y Fechas")
             ak = st.text_input("API Key de API-Football:", value=cfg[4]); id_l = st.text_input("ID de la Liga/Mundial:", value=cfg[5]); f_limite = st.text_input("Fecha límite (AAAA-MM-DD HH:MM:SS):", value=cfg[11]); new_pass = st.text_input("Nueva Clave Admin:", value=cfg[6])
+            # --- RENDERIZADO NATIVO PERFECTO: EVITA BLOQUES NEGROS EN CANVAS ---
             if st.button("Guardar Cambios de Configuración", use_container_width=True):
                 DatabaseManager.set_config(p_prode, p_exact, p_parc, p_dif, ak, id_l, new_pass, p_prode_ko, p_exact_ko, p_parc_ko, p_dif_ko, f_limite); st.success("Configuración guardada."); st.rerun()
                 
@@ -616,14 +633,14 @@ with tabs[2]:
         st.subheader("### Grilla de Partidos Actuales")
         df_adm_partidos = DatabaseManager.get_partidos_con_nombres()
         st.dataframe(df_adm_partidos, use_container_width=True, hide_index=True, column_config={
-            "id_partido": st.column_config.NumberColumn(label="ID"),
+            "ID": st.column_config.NumberColumn(label="ID"),
             "Fase": st.column_config.TextColumn(label="Fase"),
-            "bandera_l": st.column_config.ImageColumn(label="🏳️"), 
+            "Local Flag": st.column_config.ImageColumn(label="🏳️"), 
             "Local": st.column_config.TextColumn(label="Local"), 
             "GL Real": st.column_config.NumberColumn(label="GL"), 
             "GV Real": st.column_config.NumberColumn(label="GV"),
             "Visitante": st.column_config.TextColumn(label="Visitante"),
-            "bandera_v": st.column_config.ImageColumn(label="🏳️")
+            "Visitante Flag": st.column_config.ImageColumn(label="🏳️")
         })
     else:
         if pass_input: st.error("Contraseña incorrecta.")
