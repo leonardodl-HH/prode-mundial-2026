@@ -11,117 +11,85 @@ from datetime import datetime
 # --- CONFIGURACIÓN DE PÁGINA STREAMLIT ---
 st.set_page_config(page_title="Prode Mundial 2026", page_icon="⚽", layout="wide")
 
-# --- CONEXIÓN DE ARQUITECTURA PROFESIONAL (POSTGRESQL CLOUD) ---
+# --- CONEXIÓN A POSTGRESQL CLOUD ---
 class DatabaseManager:
     @staticmethod
     def get_connection():
         return psycopg2.connect(st.secrets["postgres"]["url"])
 
     @staticmethod
-    def init_db():
+    def init_db_estructura():
         conn = DatabaseManager.get_connection()
         cursor = conn.cursor()
         
-        comandos_tablas = [
-            '''CREATE TABLE IF NOT EXISTS equipos (id_equipo SERIAL PRIMARY KEY, nombre TEXT UNIQUE NOT NULL, zona TEXT NOT NULL, archivo_bandera TEXT DEFAULT 'default.png')''',
-            '''CREATE TABLE IF NOT EXISTS partidos (id_partido SERIAL PRIMARY KEY, fase TEXT NOT NULL, id_equipo_local INTEGER, id_equipo_visitante INTEGER, goles_local INTEGER DEFAULT NULL, goles_visitante INTEGER DEFAULT NULL, FOREIGN KEY(id_equipo_local) REFERENCES equipos(id_equipo), FOREIGN KEY(id_equipo_visitante) REFERENCES equipos(id_equipo), UNIQUE(fase, id_equipo_local, id_equipo_visitante))''',
-            '''CREATE TABLE IF NOT EXISTS usuarios (id_usuario SERIAL PRIMARY KEY, nombre TEXT UNIQUE NOT NULL)''',
-            '''CREATE TABLE IF NOT EXISTS apuestas (id_apuesta SERIAL PRIMARY KEY, id_usuario INTEGER, id_partido INTEGER, apuesta_goles_local INTEGER DEFAULT NULL, apuesta_goles_visitante INTEGER DEFAULT NULL, equipo_l_predicho TEXT, equipo_v_predicho TEXT, puntos_obtenidos REAL DEFAULT 0.0, FOREIGN KEY(id_usuario) REFERENCES usuarios(id_usuario), FOREIGN KEY(id_partido) REFERENCES partidos(id_partido), UNIQUE(id_usuario, id_partido))''',
-            '''CREATE TABLE IF NOT EXISTS configuracion (id INTEGER PRIMARY KEY, pts_prode INTEGER, pts_exacto INTEGER, pts_parcial INTEGER, pts_dif INTEGER, api_key TEXT, id_liga TEXT, admin_pass TEXT, pts_prode_ko INTEGER DEFAULT 8, pts_exacto_ko INTEGER DEFAULT 6, pts_parcial_ko INTEGER DEFAULT 2, pts_dif_ko INTEGER DEFAULT 2, fecha_limite TEXT DEFAULT '2026-06-11 16:00:00')'''
-        ]
+        # Crea la estructura de tablas si no existen
+        cursor.execute('''CREATE TABLE IF NOT EXISTS equipos (id_equipo SERIAL PRIMARY KEY, nombre TEXT UNIQUE NOT NULL, zona TEXT NOT NULL, archivo_bandera TEXT DEFAULT 'default.png')''')
+        cursor.execute('''CREATE TABLE IF NOT EXISTS partidos (id_partido SERIAL PRIMARY KEY, fase TEXT NOT NULL, id_equipo_local INTEGER, id_equipo_visitante INTEGER, goles_local INTEGER DEFAULT NULL, goles_visitante INTEGER DEFAULT NULL, FOREIGN KEY(id_equipo_local) REFERENCES equipos(id_equipo), FOREIGN KEY(id_equipo_visitante) REFERENCES equipos(id_equipo), UNIQUE(fase, id_equipo_local, id_equipo_visitante))''', )
+        cursor.execute('''CREATE TABLE IF NOT EXISTS usuarios (id_usuario SERIAL PRIMARY KEY, nombre TEXT UNIQUE NOT NULL)''')
+        cursor.execute('''CREATE TABLE IF NOT EXISTS apuestas (id_apuesta SERIAL PRIMARY KEY, id_usuario INTEGER, id_partido INTEGER, apuesta_goles_local INTEGER DEFAULT NULL, apuesta_goles_visitante INTEGER DEFAULT NULL, equipo_l_predicho TEXT, equipo_v_predicho TEXT, puntos_obtenidos REAL DEFAULT 0.0, FOREIGN KEY(id_usuario) REFERENCES usuarios(id_usuario), FOREIGN KEY(id_partido) REFERENCES partidos(id_partido), UNIQUE(id_usuario, id_partido))''')
+        cursor.execute('''CREATE TABLE IF NOT EXISTS configuracion (id INTEGER PRIMARY KEY, pts_prode INTEGER, pts_exacto INTEGER, pts_parcial INTEGER, pts_dif INTEGER, api_key TEXT, id_liga TEXT, admin_pass TEXT, pts_prode_ko INTEGER DEFAULT 8, pts_exacto_ko INTEGER DEFAULT 6, pts_parcial_ko INTEGER DEFAULT 2, pts_dif_ko INTEGER DEFAULT 2, fecha_limite TEXT DEFAULT '2026-06-11 16:00:00')''')
         
-        for cmd in comandos_tablas:
-            try:
-                cursor = conn.cursor()
-                cursor.execute(cmd)
-                conn.commit()
-                cursor.close()
-            except Exception:
-                conn.rollback()
+        cursor.execute("INSERT INTO configuracion (id, pts_prode, pts_exacto, pts_parcial, pts_dif, api_key, id_liga, admin_pass, pts_prode_ko, pts_exacto_ko, pts_parcial_ko, pts_dif_ko, fecha_limite) VALUES (1, 4, 3, 1, 1, '', '1', 'admin123', 8, 6, 2, 2, '2026-06-11 16:00:00') ON CONFLICT (id) DO NOTHING")
         
-        # --- MIGRADOR AUTOMÁTICO DE FIXTURE ---
-        try:
-            cursor = conn.cursor()
-            cursor.execute("SELECT COUNT(*) FROM equipos WHERE nombre = 'Costa Rica'")
-            if cursor.fetchone()[0] > 0:
-                cursor.execute("TRUNCATE apuestas, partidos, equipos, usuarios RESTART IDENTITY CASCADE;")
-                conn.commit()
-            cursor.close()
-        except Exception:
-            conn.rollback()
+        conn.commit()
+        conn.close()
 
-        try:
-            cursor = conn.cursor()
-            cursor.execute("""
-                INSERT INTO configuracion (id, pts_prode, pts_exacto, pts_parcial, pts_dif, api_key, id_liga, admin_pass, pts_prode_ko, pts_exacto_ko, pts_parcial_ko, pts_dif_ko, fecha_limite) 
-                VALUES (1, 4, 3, 1, 1, '', '1', 'admin123', 8, 6, 2, 2, '2026-06-11 16:00:00')
-                ON CONFLICT (id) DO NOTHING
-            """)
-            conn.commit()
-            cursor.close()
-        except Exception:
-            conn.rollback()
+    @staticmethod
+    def forzar_generacion_fixture():
+        conn = DatabaseManager.get_connection()
+        cursor = conn.cursor()
         
-        try:
-            cursor = conn.cursor()
-            cursor.execute("SELECT COUNT(*) FROM equipos")
-            if cursor.fetchone()[0] == 0:
-                # MAPA OFICIAL DE TUS 12 GRUPOS
-                mapa_grupos = {
-                    "A": ["México", "Sudáfrica", "Corea del Sur", "Rep. Checa"],
-                    "B": ["Canadá", "Bosnia", "Qatar", "Suiza"],
-                    "C": ["Brasil", "Marruecos", "Haití", "Escocia"],
-                    "D": ["EE.UU.", "Paraguay", "Australia", "Turquía"],
-                    "E": ["Alemania", "Curazao", "C. Marfil", "Ecuador"],
-                    "F": ["Países Bajos", "Japón", "Suecia", "Túnez"],
-                    "G": ["Bélgica", "Egipto", "Irán", "N. Zelanda"],
-                    "H": ["España", "C. Verde", "A. Saudita", "Uruguay"],
-                    "I": ["Francia", "Senegal", "Irak", "Noruega"],
-                    "J": ["Argentina", "Argelia", "Austria", "Jordania"],
-                    "K": ["Portugal", "RD Congo", "Uzbekistán", "Colombia"],
-                    "L": ["Inglaterra", "Croacia", "Ghana", "Panamá"]
-                }
-                iso_mapping = {
-                    "México": "mx", "Sudáfrica": "za", "Corea del Sur": "kr", "Rep. Checa": "cz",
-                    "Canadá": "ca", "Bosnia": "ba", "Qatar": "qa", "Suiza": "ch",
-                    "Brasil": "br", "Marruecos": "ma", "Haití": "ht", "Escocia": "gb-sct",
-                    "EE.UU.": "us", "Paraguay": "py", "Australia": "au", "Turquía": "tr",
-                    "Alemania": "de", "Curazao": "cw", "C. Marfil": "ci", "Ecuador": "ec",
-                    "Países Bajos": "nl", "Japón": "jp", "Suecia": "se", "Túnez": "tn",
-                    "Bélgica": "be", "Egipto": "eg", "Irán": "ir", "N. Zelanda": "nz",
-                    "España": "es", "C. Verde": "cv", "A. Saudita": "sa", "Uruguay": "uy",
-                    "Francia": "fr", "Senegal": "sn", "Irak": "iq", "Noruega": "no",
-                    "Argentina": "ar", "Argelia": "dz", "Austria": "at", "Jordania": "jo",
-                    "Portugal": "pt", "RD Congo": "cd", "Uzbekistán": "uz", "Colombia": "co",
-                    "Inglaterra": "gb-eng", "Croacia": "hr", "Ghana": "gh", "Panamá": "pa"
-                }
-                for grupo, selecciones in mapa_grupos.items():
-                    for sel in selecciones:
-                        iso = iso_mapping.get(sel, "un")
-                        cursor.execute('INSERT INTO equipos (nombre, zona, archivo_bandera) VALUES (%s, %s, %s) ON CONFLICT (nombre) DO NOTHING', (sel, grupo, f"https://flagcdn.com/w40/{iso}.png"))
-                
-                cursor.execute("SELECT id_equipo, zona FROM equipos ORDER BY zona, id_equipo")
-                eqs = cursor.fetchall()
-                zonas = {}
-                for eq in eqs: zonas.setdefault(eq[1], []).append(eq[0])
-                partidos = []
-                for zona, ids in zonas.items():
-                    if len(ids) == 4:
-                        cruces = [(ids[0], ids[1]), (ids[2], ids[3]), (ids[0], ids[2]), (ids[1], ids[3]), (ids[0], ids[3]), (ids[1], ids[2])]
-                        for l, v in cruces: partidos.append((f"Grupo {zona}", l, v))
-                
-                query_insert_partidos = '''
-                    INSERT INTO partidos (fase, id_equipo_local, id_equipo_visitante) 
-                    VALUES (%s, %s, %s) 
-                    ON CONFLICT (fase, id_equipo_local, id_equipo_visitante) DO NOTHING
-                '''
-                cursor.executemany(query_insert_partidos, partidos)
-                
-            conn.commit()
-            cursor.close()
-        except Exception:
-            conn.rollback()
-            
+        # Limpieza total para evitar duplicados o herencias corruptas
+        cursor.execute("TRUNCATE apuestas, partidos, equipos, usuarios RESTART IDENTITY CASCADE;")
+        
+        # Tus 12 grupos oficiales exactos
+        mapa_grupos = {
+            "A": ["México", "Sudáfrica", "Corea del Sur", "Rep. Checa"],
+            "B": ["Canadá", "Bosnia", "Qatar", "Suiza"],
+            "C": ["Brasil", "Marruecos", "Haití", "Escocia"],
+            "D": ["EE.UU.", "Paraguay", "Australia", "Turquía"],
+            "E": ["Alemania", "Curazao", "C. Marfil", "Ecuador"],
+            "F": ["Países Bajos", "Japón", "Suecia", "Túnez"],
+            "G": ["Bélgica", "Egipto", "Irán", "N. Zelanda"],
+            "H": ["España", "C. Verde", "A. Saudita", "Uruguay"],
+            "I": ["Francia", "Senegal", "Irak", "Noruega"],
+            "J": ["Argentina", "Argelia", "Austria", "Jordania"],
+            "K": ["Portugal", "RD Congo", "Uzbekistán", "Colombia"],
+            "L": ["Inglaterra", "Croacia", "Ghana", "Panamá"]
+        }
+        
+        iso_mapping = {
+            "México": "mx", "Sudáfrica": "za", "Corea del Sur": "kr", "Rep. Checa": "cz",
+            "Canadá": "ca", "Bosnia": "ba", "Qatar": "qa", "Suiza": "ch",
+            "Brasil": "br", "Marruecos": "ma", "Haití": "ht", "Escocia": "gb-sct",
+            "EE.UU.": "us", "Paraguay": "py", "Australia": "au", "Turquía": "tr",
+            "Alemania": "de", "Curazao": "cw", "C. Marfil": "ci", "Ecuador": "ec",
+            "Países Bajos": "nl", "Japón": "jp", "Suecia": "se", "Túnez": "tn",
+            "Bélgica": "be", "Egipto": "eg", "Irán": "ir", "N. Zelanda": "nz",
+            "España": "es", "C. Verde": "cv", "A. Saudita": "sa", "Uruguay": "uy",
+            "Francia": "fr", "Senegal": "sn", "Irak": "iq", "Noruega": "no",
+            "Argentina": "ar", "Argelia": "dz", "Austria": "at", "Jordania": "jo",
+            "Portugal": "pt", "RD Congo": "cd", "Uzbekistán": "uz", "Colombia": "co",
+            "Inglaterra": "gb-eng", "Croacia": "hr", "Ghana": "gh", "Panamá": "pa"
+        }
+        
+        for grupo, selecciones in mapa_grupos.items():
+            for sel in selecciones:
+                iso = iso_mapping.get(sel, "un")
+                cursor.execute('INSERT INTO equipos (nombre, zona, archivo_bandera) VALUES (%s, %s, %s)', (sel, grupo, f"https://flagcdn.com/w40/{iso}.png"))
+        
+        cursor.execute("SELECT id_equipo, zona FROM equipos ORDER BY zona, id_equipo")
+        eqs = cursor.fetchall()
+        zonas = {}
+        for eq in eqs: zonas.setdefault(eq[1], []).append(eq[0])
+        partidos = []
+        for zona, ids in zonas.items():
+            if len(ids) == 4:
+                cruces = [(ids[0], ids[1]), (ids[2], ids[3]), (ids[0], ids[2]), (ids[1], ids[3]), (ids[0], ids[3]), (ids[1], ids[2])]
+                for l, v in cruces: partidos.append((f"Grupo {zona}", l, v))
+        
+        cursor.executemany('INSERT INTO partidos (fase, id_equipo_local, id_equipo_visitante) VALUES (%s, %s, %s)', partidos)
+        conn.commit()
         conn.close()
 
     @staticmethod
@@ -137,7 +105,7 @@ class DatabaseManager:
     def set_config(p_prode, p_exact, p_parcial, p_dif, api_key, id_liga, admin_pass, p_prode_ko, p_exact_ko, p_parcial_ko, p_dif_ko, fecha_limite):
         conn = DatabaseManager.get_connection()
         cursor = conn.cursor()
-        cursor.execute("UPDATE configuracion SET pts_prode=%s, pts_exacto=%s, pts_parcial=%s, pts_dif=%s, api_key=%s, id_liga=%s, admin_pass=%s, pts_prode_ko=%s, pts_exacto_ko=%s, pts_parcial_ko=%s, pts_dif_ko=%s, fecha_limite=%s WHERE id=1", (p_prode, p_exact, p_parcial, p_dif, api_key, id_liga, admin_pass, p_prode_ko, p_exact_ko, p_parcial_ko, p_dif_ko, fecha_limite))
+        cursor.execute("UPDATE configuracion SET pts_prode=%s, pts_exacto=%s, pts_parcial=%s, pts_dif=%s, api_key=%s, id_liga=%s, admin_pass=%s, pts_prode_ko=%s, pts_exacto=%s, pts_parcial=%s, pts_dif=%s, fecha_limite=%s WHERE id=1", (p_prode, p_exact, p_parcial, p_dif, api_key, id_liga, admin_pass, p_prode_ko, p_exact_ko, p_parcial_ko, p_dif_ko, fecha_limite))
         conn.commit()
         conn.close()
 
@@ -156,8 +124,8 @@ class DatabaseManager:
         cursor = conn.cursor()
         query = '''
             SELECT 
-                p.id_partido as "id_partido", p.fase as "Fase", el.archivo_bandera as "bandera_l", el.nombre as "Local", 
-                p.goles_local as "GL Real", p.goles_visitante as "GV Real", ev.nombre as "Visitante", ev.archivo_bandera as "bandera_v"
+                p.id_partido as id_partido, p.fase as fase, el.archivo_bandera as bandera_l, el.nombre as local, 
+                p.goles_local as goles_l, p.goles_visitante as goles_v, ev.nombre as visitante, ev.archivo_bandera as bandera_v
             FROM partidos p 
             JOIN equipos el ON p.id_equipo_local = el.id_equipo 
             JOIN equipos ev ON p.id_equipo_visitante = ev.id_equipo 
@@ -279,10 +247,10 @@ class DatabaseManager:
         conn.close()
         return df
 
-# --- CONTROLADORES ---
-DatabaseManager.init_db()
+# --- INICIALIZACIÓN DE LA ESTRUCTURA ---
+DatabaseManager.init_db_estructura()
 
-# --- RENDERIZADO DEL ENCABEZADO DE LA PÁGINA ---
+# --- ENCABEZADOS DE LA PÁGINA ---
 st.title("🏆 Prode Mundial 2026 — Dashboard en Vivo")
 st.markdown("Bienvenido al centro de estadísticas oficial. Sincronización en la nube nativa permanente.")
 
@@ -314,15 +282,15 @@ with tabs[0]:
         if not df_public_partidos.empty:
             st.dataframe(df_public_partidos, use_container_width=True, hide_index=True, column_config={
                 "id_partido": st.column_config.NumberColumn(label="ID"),
-                "Fase": st.column_config.TextColumn(label="Fase"),
+                "fase": st.column_config.TextColumn(label="Fase"),
                 "bandera_l": st.column_config.ImageColumn(label="🏳️"), 
-                "Local": st.column_config.TextColumn(label="Local"), 
-                "GL Real": st.column_config.NumberColumn(label="GL"), 
-                "GV Real": st.column_config.NumberColumn(label="GV"),
-                "Visitante": st.column_config.TextColumn(label="Visitante"),
+                "local": st.column_config.TextColumn(label="Local"), 
+                "goles_l": st.column_config.NumberColumn(label="GL"), 
+                "goles_v": st.column_config.NumberColumn(label="GV"),
+                "visitante": st.column_config.TextColumn(label="Visitante"),
                 "bandera_v": st.column_config.ImageColumn(label="🏳️")
             })
-        else: st.info("El fixture todavía no fue generado.")
+        else: st.info("El fixture todavía no fue generado. Vaya al Panel Administrador para crearlo.")
 
     st.markdown("---")
     st.subheader("🔍 Apuestas")
@@ -373,18 +341,18 @@ with tabs[1]:
         
         row_num = 6; prev_fase = None
         for i, r in df_partidos.iterrows():
-            if prev_fase and r['Fase'] != prev_fase:
+            if prev_fase and r['fase'] != prev_fase:
                 for col_num in range(1, 7): ws.cell(row=row_num-1, column=col_num).border = thick_bot
             ws.row_dimensions[row_num].height = 24
             ws.cell(row=row_num, column=1, value=r['id_partido']).alignment = Alignment(horizontal="center")
-            ws.cell(row=row_num, column=2, value=r['Fase']).alignment = Alignment(horizontal="center")
-            ws.cell(row=row_num, column=3, value=r['Local'])
-            ws.cell(row=row_num, column=6, value=r['Visitante'])
+            ws.cell(row=row_num, column=2, value=r['fase']).alignment = Alignment(horizontal="center")
+            ws.cell(row=row_num, column=3, value=r['local'])
+            ws.cell(row=row_num, column=6, value=r['visitante'])
             for col_num in range(1, 7):
                 cell = ws.cell(row=row_num, column=col_num); cell.font = Font(name="Arial", size=11)
                 if cell.border != thick_bot: cell.border = thin
                 if i % 2 == 1 and col_num not in [4, 5]: cell.fill = PatternFill(start_color="F9F9F9", end_color="F9F9F9", fill_type="solid")
-            prev_fase = r['Fase']; row_num += 1
+            prev_fase = r['fase']; row_num += 1
             
         for col_num in range(1, 7): ws.cell(row=row_num-1, column=col_num).border = thick_bot
         ws.column_dimensions['A'].width = 12; ws.column_dimensions['B'].width = 18; ws.column_dimensions['C'].width = 25; ws.column_dimensions['D'].width = 14; ws.column_dimensions['E'].width = 14; ws.column_dimensions['F'].width = 25
@@ -402,7 +370,7 @@ with tabs[1]:
                     DatabaseManager.importar_apuestas_excel(pd.read_excel(uploaded_file, skiprows=4).assign(Competidor=competidor))
                     st.success(f"¡Excelente! Pronósticos de '{competidor}' cargados correctamente.")
             except Exception as e: st.error(f"Error procesando el archivo: {e}")
-    else: st.warning("El fixture no fue generado aún.")
+    else: st.warning("El fixture no fue generado aún en la base de datos.")
 
 # ==========================================
 # TAB 3: PANEL ADMINISTRADOR
@@ -412,18 +380,23 @@ with tabs[2]:
     pass_input = st.text_input("Ingresa la Contraseña de Administrador:", type="password")
     if pass_input == cfg[6]:
         st.success("Conexión Segura con PostgreSQL Cloud En Línea")
-        thin_b = Border(left=Side(style='thin', color='D3D3D3'), right=Side(style='thin', color='D3D3D3'), top=Side(style='thin', color='D3D3D3'), bottom=Side(style='thin', color='D3D3D3'))
         
+        # --- BOTÓN CLAVE: EL GENERADOR MANUAL IMPERATIVO ---
+        st.markdown("### 🚀 Control Crítico del Torneo")
+        st.write("Si la base de datos se encuentra vacía o querés resetearla con tus 12 grupos oficiales del Mundial 2026, presioná el botón de abajo.")
+        if st.button("🔥 Inicializar Base de Datos y Generar Fixture (72 Partidos)", use_container_width=True):
+            DatabaseManager.forzar_generacion_fixture()
+            st.success("¡Operación Exitosa! Se limpió la base y se crearon los 72 partidos de la primera fase.")
+            st.rerun()
+            
+        st.markdown("---")
         st.markdown("### 📊 Informes de Auditoría de Producción")
         df_auditoria = DatabaseManager.obtener_datos_auditoria_puntos()
         if not df_auditoria.empty:
-            wb_aud = openpyxl.Workbook(); ws_aud = wb_aud.active; ws_aud.title = "Auditoría"; ws_aud.views.sheetView[0].showGridLines = True
+            wb_aud = openpyxl.Workbook(); ws_aud = wb_aud.active; ws_aud.title = "Auditoría"
             ws_aud.merge_cells("A1:J1"); ws_aud["A1"] = "INFORME DETALLADO DE DESGLOSE DE PUNTOS"
-            ws_aud["A1"].font = Font(name="Arial", size=14, bold=True, color="FFFFFF"); ws_aud["A1"].fill = PatternFill(start_color="1F4E5B", end_color="1F4E5B", fill_type="solid")
-            ws_aud["A1"].alignment = Alignment(horizontal="center", vertical="center"); ws_aud.row_dimensions[1].height = 35
-            
             for col_idx, h in enumerate(['Competidor', 'Fase', 'Partido', 'Pronóstico', 'Resultado Real', 'Pts Ganador', 'Pts Exacto', 'Pts Goles', 'Pts Diferencia', 'Total Partido'], 1):
-                cell = ws_aud.cell(row=3, column=col_idx, value=h); cell.font = Font(name="Arial", size=11, bold=True, color="FFFFFF"); cell.fill = PatternFill(start_color="007bff", end_color="007bff", fill_type="solid")
+                ws_aud.cell(row=3, column=col_idx, value=h)
             
             r_idx = 4
             for _, row in df_auditoria.iterrows():
@@ -471,14 +444,14 @@ with tabs[2]:
                             if f["fixture"]["status"]["short"] in ["FT", "AET", "PEN"]:
                                 al, av, gl, gv = f["teams"]["home"]["name"].lower(), f["teams"]["away"]["name"].lower(), f["goals"]["home"], f["goals"]["away"]
                                 for idx, row in df_p.iterrows():
-                                    if al in row['Local'].lower() and av in row['Visitante'].lower(): DatabaseManager.guardar_resultado(int(row['id_partido']), gl, gv); count += 1
+                                    if al in row['local'].lower() and av in row['visitante'].lower(): DatabaseManager.guardar_resultado(int(row['id_partido']), gl, gv); count += 1
                         st.success(f"¡Sincronización terminada! {count} partidos actualizados."); st.rerun()
                     except Exception as e: st.error(f"Error de API: {e}")
         with col_res2:
             st.markdown("##### 📂 Opción Secundaria: Contingencia Manual por Excel")
             df_actual_goles = DatabaseManager.get_partidos_con_nombres()
             if not df_actual_goles.empty:
-                wb_adm_res = openpyxl.Workbook(); ws_adm_res = wb_adm_res.active; ws_adm_res.title = "Resultados"; ws_adm_res.views.sheetView[0].showGridLines = True
+                wb_adm_res = openpyxl.Workbook(); ws_adm_res = wb_adm_res.active; ws_adm_res.title = "Resultados"
                 ws_adm_res.merge_cells("A1:F1"); ws_adm_res["A1"] = "PRODE MUNDIAL - CARGA MANUAL DE RESULTADOS"
                 for col_num, h in enumerate(['ID_Partido', 'Fase', 'Local', 'Goles_L', 'Goles_V', 'Visitante'], 1):
                     ws_adm_res.cell(row=5, column=col_num, value=h)
@@ -486,11 +459,11 @@ with tabs[2]:
                 row_n = 6
                 for _, r in df_actual_goles.iterrows():
                     ws_adm_res.cell(row=row_n, column=1, value=r['id_partido'])
-                    ws_adm_res.cell(row=row_n, column=2, value=r['Fase'])
-                    ws_adm_res.cell(row=row_n, column=3, value=r['Local'])
-                    ws_adm_res.cell(row=row_n, column=4, value="" if pd.isna(r['GL Real']) else int(r['GL Real']))
-                    ws_adm_res.cell(row=row_n, column=5, value="" if pd.isna(r['GV Real']) else int(r['GV Real']))
-                    ws_adm_res.cell(row=row_n, column=6, value=r['Visitante'])
+                    ws_adm_res.cell(row=row_n, column=2, value=r['fase'])
+                    ws_adm_res.cell(row=row_n, column=3, value=r['local'])
+                    ws_adm_res.cell(row=row_n, column=4, value="" if pd.isna(r['goles_l']) else int(r['goles_l']))
+                    ws_adm_res.cell(row=row_n, column=5, value="" if pd.isna(r['goles_v']) else int(r['goles_v']))
+                    ws_adm_res.cell(row=row_n, column=6, value=r['visitante'])
                     row_n += 1
                 out_adm_res = io.BytesIO(); wb_adm_res.save(out_adm_res)
                 st.download_button(label="📥 Descargar Planilla de Resultados Reales", data=out_adm_res.getvalue(), file_name="Planilla_Resultados_Oficiales.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
@@ -544,12 +517,12 @@ with tabs[2]:
         if not df_adm_partidos.empty:
             st.dataframe(df_adm_partidos, use_container_width=True, hide_index=True, column_config={
                 "id_partido": st.column_config.NumberColumn(label="ID"),
-                "Fase": st.column_config.TextColumn(label="Fase"),
+                "fase": st.column_config.TextColumn(label="Fase"),
                 "bandera_l": st.column_config.ImageColumn(label="🏳️"), 
-                "Local": st.column_config.TextColumn(label="Local"), 
-                "GL Real": st.column_config.NumberColumn(label="GL"), 
-                "GV Real": st.column_config.NumberColumn(label="GV"),
-                "Visitante": st.column_config.TextColumn(label="Visitante"),
+                "local": st.column_config.TextColumn(label="Local"), 
+                "goles_l": st.column_config.NumberColumn(label="GL"), 
+                "goles_v": st.column_config.NumberColumn(label="GV"),
+                "visitante": st.column_config.TextColumn(label="Visitante"),
                 "bandera_v": st.column_config.ImageColumn(label="🏳️")
             })
     else:
