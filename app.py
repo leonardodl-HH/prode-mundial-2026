@@ -11,32 +11,25 @@ from datetime import datetime
 # --- CONFIGURACIÓN DE PÁGINA STREAMLIT ---
 st.set_page_config(page_title="Prode Mundial 2026", page_icon="⚽", layout="wide")
 
-# --- INYECCIÓN DE DISEÑO ABSOLUTO: MODO CLARO PROFESIONAL Y ULTRA LEGIBLE ---
+# --- INYECCIÓN DE DISEÑO ABSOLUTO: ELIMINA MENÚS NEGROS Y FUERZA MODO CLARO ---
 st.markdown("""
     <style>
-    /* Fondo global de la aplicación */
-    .stApp, [data-testid="stAppViewContainer"] {
+    /* Fondo global de la aplicación y textos base */
+    .stApp, [data-testid="stAppViewContainer"], [data-testid="stHeader"], [data-testid="stMainBlockContainer"] {
         background-color: #FFFFFF !important;
         color: #1F2937 !important;
     }
     
     /* Forzado de color oscuro para textos de lectura, títulos y etiquetas */
-    h1, h2, h3, h4, h5, h6, p, span, label, li, small {
+    h1, h2, h3, h4, h5, h6, p, span, label, li, small, th, td {
         color: #1F2937 !important;
     }
     
-    /* Estilización de casilleros de entrada de texto, números y contraseñas */
-    input, textarea {
-        background-color: #F3F4F6 !important;
+    /* Blanqueo total de casilleros de texto, contraseñas y números (Elimina los bloques negros) */
+    input, textarea, div[data-baseweb="input"], div[data-baseweb="base-input"] {
+        background-color: #F9FAFB !important;
         color: #1F2937 !important;
         border: 1px solid #D1D5DB !important;
-    }
-    
-    /* Contenedores internos de los inputs de Streamlit */
-    div[data-baseweb="input"] {
-        background-color: #F3F4F6 !important;
-        border: 1px solid #D1D5DB !important;
-        border-radius: 6px !important;
     }
     
     div[data-baseweb="input"] input {
@@ -44,16 +37,20 @@ st.markdown("""
         color: #1F2937 !important;
     }
     
-    /* Menús desplegables (Selectbox) corregidos */
-    div[data-baseweb="select"] > div {
-        background-color: #F3F4F6 !important;
+    /* Corrección absoluta de los menús desplegables (Selectbox) */
+    div[data-baseweb="select"], div[data-baseweb="select"] > div, div[role="button"] {
+        background-color: #F9FAFB !important;
         color: #1F2937 !important;
-        border: 1px solid #D1D5DB !important;
-        border-radius: 6px !important;
+        border-color: #D1D5DB !important;
     }
     
-    /* Texto seleccionado dentro de los desplegables */
     div[data-testid="stSelectbox"] span, div[data-baseweb="select"] span {
+        color: #1F2937 !important;
+    }
+    
+    /* Fondo de la lista flotante de opciones al hacer clic en un desplegable */
+    div[data-baseweb="popover"], div[role="listbox"], ul[role="listbox"], li[role="option"] {
+        background-color: #FFFFFF !important;
         color: #1F2937 !important;
     }
     
@@ -64,7 +61,7 @@ st.markdown("""
         border: 1px solid #D1D5DB !important;
     }
     
-    /* Botones generales de acción de la plataforma (Color Azul Corporativo) */
+    /* Botones generales de acción de la plataforma (Azul Deportivo) */
     button[data-testid="baseButton-secondary"], button[data-testid="baseButton-primary"] {
         background-color: #007BFF !important;
         color: #FFFFFF !important;
@@ -79,7 +76,7 @@ st.markdown("""
         color: #FFFFFF !important;
     }
     
-    /* Caja de arrastre para subir archivos Excel */
+    /* Caja de carga de archivos Excel */
     div[data-testid="stFileUploader"] section {
         background-color: #F9FAFB !important;
         border: 2px dashed #CBD5E1 !important;
@@ -113,8 +110,8 @@ st.markdown("""
         border-radius: 8px !important;
     }
     
-    /* Corrección del fondo de tablas de datos */
-    div[data-testid="stDataFrame"] {
+    /* Forzado de fondo blanco y texto oscuro nativo en las grillas/tablas */
+    div[data-testid="stDataFrame"], div[data-testid="stDataFrame"] > div {
         background-color: #FFFFFF !important;
     }
     </style>
@@ -394,9 +391,11 @@ with tabs[0]:
         df_public_partidos = DatabaseManager.get_partidos_con_nombres()
         if not df_public_partidos.empty:
             fases_unicas = df_public_partidos['Fase'].unique()
-            fase_colors = {fase: 'rgba(30, 144, 255, 0.08)' if idx % 2 == 0 else 'rgba(0, 0, 0, 0)' for idx, fase in enumerate(fases_unicas)}
             
-            st.dataframe(df_public_partidos.style.apply(lambda r: [f"background-color: {fase_colors.get(r['Fase'], '')}" for _ in r], axis=1), use_container_width=True, hide_index=True, column_config={
+            # --- CORREGIDO CON TEXTO OSCURO EN LAS FILAS (#1F2937) ---
+            fase_colors = {fase: 'background-color: rgba(30, 144, 255, 0.08); color: #1F2937;' if idx % 2 == 0 else 'background-color: #FFFFFF; color: #1F2937;' for idx, fase in enumerate(fases_unicas)}
+            
+            st.dataframe(df_public_partidos.style.apply(lambda r: [fase_colors.get(r['Fase'], '') for _ in r], axis=1), use_container_width=True, hide_index=True, column_config={
                 "id_partido": st.column_config.NumberColumn(label="ID"),
                 "Fase": st.column_config.TextColumn(label="Fase"),
                 "bandera_l": st.column_config.ImageColumn(label="🏳️"), 
@@ -417,8 +416,8 @@ with tabs[0]:
             if user_sel:
                 df_user_ap = DatabaseManager.get_apuestas_usuario_web(user_sel)
                 if not df_user_ap.empty:
-                    colors_usr = {fase: 'rgba(30, 144, 255, 0.08)' if idx % 2 == 0 else 'rgba(0, 0, 0, 0)' for idx, fase in enumerate(df_user_ap['Fase'].unique())}
-                    st.dataframe(df_user_ap.style.apply(lambda r: [f"background-color: {colors_usr.get(r['Fase'], '')}" for _ in r], axis=1), use_container_width=True, hide_index=True, column_config={
+                    colors_usr = {fase: 'background-color: rgba(30, 144, 255, 0.08); color: #1F2937;' if idx % 2 == 0 else 'background-color: #FFFFFF; color: #1F2937;' for idx, fase in enumerate(df_user_ap['Fase'].unique())}
+                    st.dataframe(df_user_ap.style.apply(lambda r: [colors_usr.get(r['Fase'], '') for _ in r], axis=1), use_container_width=True, hide_index=True, column_config={
                         "Fase": st.column_config.TextColumn(label="Fase"),
                         "bandera_l": st.column_config.ImageColumn(label="🏳️"),
                         "Local": st.column_config.TextColumn(label="Local"),
@@ -622,8 +621,8 @@ with tabs[2]:
         st.subheader("### Grilla de Partidos Actuales")
         df_adm_partidos = DatabaseManager.get_partidos_con_nombres()
         fases_adm = df_adm_partidos['Fase'].unique()
-        fase_colors_adm = {fase: 'rgba(30, 144, 255, 0.08)' if idx % 2 == 0 else 'rgba(0, 0, 0, 0)' for idx, fase in enumerate(fases_adm)}
-        st.dataframe(df_adm_partidos.style.apply(lambda r: [f"background-color: {fase_colors_adm.get(r['Fase'], '')}" for _ in r], axis=1), use_container_width=True, hide_index=True, column_config={
+        fase_colors_adm = {fase: 'background-color: rgba(30, 144, 255, 0.08); color: #1F2937;' if idx % 2 == 0 else 'background-color: #FFFFFF; color: #1F2937;' for idx, fase in enumerate(fases_adm)}
+        st.dataframe(df_adm_partidos.style.apply(lambda r: [fase_colors_adm.get(r['Fase'], '') for _ in r], axis=1), use_container_width=True, hide_index=True, column_config={
             "id_partido": st.column_config.NumberColumn(label="ID"),
             "Fase": st.column_config.TextColumn(label="Fase"),
             "bandera_l": st.column_config.ImageColumn(label="🏳️"), 
