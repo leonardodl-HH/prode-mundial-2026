@@ -231,4 +231,326 @@ class DatabaseManager:
         cursor.execute('''SELECT p.id_partido, p.fase, el.nombre, ev.nombre, p.goles_local, p.goles_visitante FROM partidos p JOIN equipos el ON p.id_equipo_local = el.id_equipo JOIN equipos ev ON p.id_equipo_visitante = ev.id_equipo WHERE p.goles_local IS NOT NULL''')
         partidos_jugados = cursor.fetchall()
         
-        for id_partido, fase, real_l_nombre, real_
+        for id_partido, fase, real_l_nombre, real_v_nombre, real_l_gol, real_v_gol in partidos_jugados:
+            cursor.execute("SELECT id_usuario, apuesta_goles_local, apuesta_goles_visitante, equipo_l_predicho, equipo_v_predicho FROM apuestas WHERE id_partido = %s AND apuesta_goles_local IS NOT NULL", (id_partido,))
+            apuestas = cursor.fetchall()
+            res_real = 1 if real_l_gol > real_v_gol else (0 if real_l_gol == real_v_gol else -1)
+            
+            if "Grupo" in fase: pt_p, pt_ex, pt_pa, pt_df = float(cfg_pts[0]), float(cfg_pts[1]), float(cfg_pts[2]), float(cfg_pts[3])
+            else: pt_p, pt_ex, pt_pa, pt_df = float(cfg_pts[4]), float(cfg_pts[5]), float(cfg_pts[6]), float(cfg_pts[7])
+                
+            for id_user, ap_l_gol, ap_v_gol, ap_l_nombre, ap_v_nombre in apuestas:
+                res_ap = 1 if ap_l_gol > ap_v_gol else (0 if ap_l_gol == ap_v_gol else -1)
+                puntos_base = 0.0
+                if res_real == res_ap:
+                    puntos_base += pt_p
+                    if real_l_gol == ap_l_gol and real_v_gol == ap_v_gol: puntos_base += pt_ex
+                    else:
+                        if real_l_gol == ap_l_gol or real_v_gol == ap_v_gol: puntos_base += pt_pa
+                        if (real_l_gol - real_v_gol) == (ap_l_gol - ap_v_gol): puntos_base += pt_df
+                cursor.execute("UPDATE apuestas SET puntos_obtenidos = %s WHERE id_usuario = %s AND id_partido = %s", (puntos_base, id_user, id_partido))
+        conn.commit()
+        
+        cursor.execute('SELECT u.nombre as "Competidor", COALESCE(SUM(a.puntos_obtenidos), 0) as "Puntos" FROM usuarios u LEFT JOIN apuestas a ON u.id_usuario = a.id_usuario GROUP BY u.id_usuario, u.nombre ORDER BY "Puntos" DESC, u.nombre ASC')
+        columns = [desc[0] for desc in cursor.description]
+        df_rank = pd.DataFrame(cursor.fetchall(), columns=columns)
+        conn.close()
+        return df_rank
+
+    @staticmethod
+    def get_apuestas_usuario_web(nombre_usuario):
+        conn = DatabaseManager.get_connection()
+        cursor = conn.cursor()
+        query = '''SELECT p.fase as "Fase", el.archivo_bandera as "bandera_l", a.equipo_l_predicho as "Local", a.apuesta_goles_local as "GL Pred", a.apuesta_goles_visitante as "GV Pred", a.equipo_v_predicho as "Visitante", ev.archivo_bandera as "bandera_v", p.goles_local as "GL Real", p.goles_visitante as "GV Real", a.puntos_obtenidos as "Pts Ganados" FROM apuestas a JOIN usuarios u ON a.id_usuario = u.id_usuario JOIN partidos p ON a.id_partido = p.id_partido JOIN equipos el ON p.id_equipo_local = el.id_equipo JOIN equipos ev ON p.id_equipo_visitante = ev.id_equipo WHERE u.nombre = %s'''
+        cursor.execute(query, (nombre_usuario,))
+        columns = [desc[0] for desc in cursor.description]
+        df = pd.DataFrame(cursor.fetchall(), columns=columns)
+        conn.close()
+        return df
+
+    @staticmethod
+    def obtener_datos_auditoria_puntos():
+        conn = DatabaseManager.get_connection()
+        cursor = conn.cursor()
+        query = '''SELECT u.nombre as "Competidor", p.fase as "Fase", el.nombre || ' vs ' || ev.nombre as "Partido", a.apuesta_goles_local as "Al", a.apuesta_goles_visitante as "Av", p.goles_local as "Rl", p.goles_visitante as "Rv" FROM apuestas a JOIN usuarios u ON a.id_usuario = u.id_usuario JOIN partidos p ON a.id_partido = p.id_partido JOIN equipos el ON p.id_equipo_local = el.id_equipo JOIN equipos ev ON p.id_equipo_visitante = ev.id_equipo WHERE p.goles_local IS NOT NULL AND a.apuesta_goles_local IS NOT NULL'''
+        cursor.execute(query)
+        columns = [desc[0] for desc in cursor.description]
+        df = pd.DataFrame(cursor.fetchall(), columns=columns)
+        conn.close()
+        return df
+
+# --- CONTROLADORES ---
+DatabaseManager.init_db()
+
+# --- RENDERIZADO DEL ENCABEZADO DE LA PÁGINA ---
+st.title("🏆 Prode Mundial 2026 — Dashboard en Vivo")
+st.markdown("Bienvenido al centro de estadísticas oficial. Sincronización en la nube nativa permanente.")
+
+tabs = st.tabs(["📊 Posiciones y Apuestas", "📤 Subir Mis Apuestas", "⚙️ Panel Administrador"])
+
+# ==========================================
+# TAB 1: DASHBOARD PÚBLICO
+# ==========================================
+with tabs[0]:
+    cfg = DatabaseManager.get_config()
+    with st.expander("📜 Ver Reglamento y Sistema de Puntuación"):
+        st.subheader("📝 Cálculo de Puntos Automático")
+        col_r1, col_r2 = st.columns(2)
+        with col_r1: st.markdown(f"**🏟️ Fase de Grupos:**\n* Ganador/Empate: **+{cfg[0]} Pts**\n* Exacto: **+{cfg[1]} Pts**\n* Goles de un equipo: **+{cfg[2]} Pts**\n* Diferencia de goles: **+{cfg[3]} Pts**")
+        with col_r2: st.markdown(f"**⚔️ Segunda Vuelta (KO):**\n* Ganador KO: **+{cfg[7]} Pts**\n* Exacto KO: **+{cfg[8]} Pts**\n* Goles KO: **+{cfg[9]} Pts**\n* Diferencia KO: **+{cfg[10]} Pts**")
+            
+    st.markdown("---")
+    col1, col2 = st.columns([1, 1.3])
+    with col1:
+        st.subheader("⭐ Tabla de Posiciones")
+        df_rank = DatabaseManager.calcular_ranking_avanzado()
+        if not df_rank.empty:
+            df_rank.index = df_rank.index + 1
+            st.dataframe(df_rank, use_container_width=True)
+        else: st.info("No hay puntuaciones registradas.")
+    with col2:
+        st.subheader("📅 Fixture y Resultados Oficiales")
+        df_public_partidos = DatabaseManager.get_partidos_con_nombres()
+        if not df_public_partidos.empty:
+            st.dataframe(df_public_partidos, use_container_width=True, hide_index=True, column_config={
+                "id_partido": st.column_config.NumberColumn(label="ID"),
+                "Fase": st.column_config.TextColumn(label="Fase"),
+                "bandera_l": st.column_config.ImageColumn(label="🏳️"), 
+                "Local": st.column_config.TextColumn(label="Local"), 
+                "GL Real": st.column_config.NumberColumn(label="GL"), 
+                "GV Real": st.column_config.NumberColumn(label="GV"),
+                "Visitante": st.column_config.TextColumn(label="Visitante"),
+                "bandera_v": st.column_config.ImageColumn(label="🏳️")
+            })
+        else: st.info("El fixture todavía no fue generado.")
+
+    st.markdown("---")
+    st.subheader("🔍 Apuestas")
+    if datetime.now().strftime("%Y-%m-%d %H:%M:%S") >= cfg[11]:
+        usuarios = DatabaseManager.get_usuarios()
+        if usuarios:
+            user_sel = st.selectbox("Selecciona un competidor:", usuarios)
+            if user_sel:
+                df_user_ap = DatabaseManager.get_apuestas_usuario_web(user_sel)
+                if not df_user_ap.empty:
+                    st.dataframe(df_user_ap, use_container_width=True, hide_index=True, column_config={
+                        "Fase": st.column_config.TextColumn(label="Fase"),
+                        "bandera_l": st.column_config.ImageColumn(label="🏳️"),
+                        "Local": st.column_config.TextColumn(label="Local"),
+                        "GL Pred": st.column_config.NumberColumn(label="GL Pred"),
+                        "GV Pred": st.column_config.NumberColumn(label="GV Pred"),
+                        "Visitante": st.column_config.TextColumn(label="Visitante"),
+                        "bandera_v": st.column_config.ImageColumn(label="🏳️"),
+                        "GL Real": st.column_config.NumberColumn(label="GL Real"),
+                        "GV Real": st.column_config.NumberColumn(label="GV Real"),
+                        "Pts Ganados": st.column_config.NumberColumn(label="Pts Ganados")
+                    })
+        else: st.info("Aún no hay usuarios cargados en el sistema.")
+    else: st.warning(f"🔒 **Pronósticos Protegidos:** Las apuestas de todos se revelarán el **{cfg[11]}** para evitar copias.")
+
+# ==========================================
+# TAB 2: USER CARGA APUESTAS
+# ==========================================
+with tabs[1]:
+    st.subheader("📝 Envía tus Pronósticos")
+    st.write("Descarga la plantilla oficial, escribe tu nombre en la celda amarilla B3, completa tus goles y subila acá.")
+    df_partidos = DatabaseManager.get_partidos_con_nombres()
+    if not df_partidos.empty:
+        wb = openpyxl.Workbook(); ws = wb.active; ws.title = "Apuestas"; ws.views.sheetView[0].showGridLines = True
+        ws.merge_cells("A1:F1"); ws["A1"] = "PRODE MUNDIAL - FORMULARIO"
+        ws["A1"].font = Font(name="Arial", size=14, bold=True, color="FFFFFF"); ws["A1"].fill = PatternFill(start_color="2F4F4F", end_color="2F4F4F", fill_type="solid")
+        ws["A1"].alignment = Alignment(horizontal="center", vertical="center"); ws.row_dimensions[1].height = 35
+        ws["A3"] = "COMPETIDOR (Nombre):"; ws["A3"].font = Font(name="Arial", size=11, bold=True)
+        ws["B3"] = "[Escriba su nombre aquí]"; ws["B3"].fill = PatternFill(start_color="FFF8DC", end_color="FFF8DC", fill_type="solid")
+        thin = Border(left=Side(style='thin', color='A9A9A9'), right=Side(style='thin', color='A9A9A9'), top=Side(style='thin', color='A9A9A9'), bottom=Side(style='thin', color='A9A9A9'))
+        thick_bot = Border(left=Side(style='thin', color='A9A9A9'), right=Side(style='thin', color='A9A9A9'), top=Side(style='thin', color='A9A9A9'), bottom=Side(style='medium', color='000000'))
+        ws["B3"].border = thin
+        
+        for col_num, h in enumerate(['ID_Partido', 'Fase', 'Local', 'Goles_L', 'Goles_V', 'Visitante'], 1):
+            c = ws.cell(row=5, column=col_num, value=h); c.font = Font(name="Arial", size=11, bold=True, color="FFFFFF"); c.fill = PatternFill(start_color="4682B4", end_color="4682B4", fill_type="solid")
+            c.alignment = Alignment(horizontal="center", vertical="center"); c.border = thin
+        ws.row_dimensions[5].height = 30
+        
+        row_num = 6; prev_fase = None
+        for i, r in df_partidos.iterrows():
+            if prev_fase and r['Fase'] != prev_fase:
+                for col_num in range(1, 7): ws.cell(row=row_num-1, column=col_num).border = thick_bot
+            ws.row_dimensions[row_num].height = 24
+            ws.cell(row=row_num, column=1, value=r['id_partido']).alignment = Alignment(horizontal="center")
+            ws.cell(row=row_num, column=2, value=r['Fase']).alignment = Alignment(horizontal="center")
+            ws.cell(row=row_num, column=3, value=r['Local'])
+            ws.cell(row=row_num, column=6, value=r['Visitante'])
+            for col_num in range(1, 7):
+                cell = ws.cell(row=row_num, column=col_num); cell.font = Font(name="Arial", size=11)
+                if cell.border != thick_bot: cell.border = thin
+                if i % 2 == 1 and col_num not in [4, 5]: cell.fill = PatternFill(start_color="F9F9F9", end_color="F9F9F9", fill_type="solid")
+            prev_fase = r['Fase']; row_num += 1
+            
+        for col_num in range(1, 7): ws.cell(row=row_num-1, column=col_num).border = thick_bot
+        ws.column_dimensions['A'].width = 12; ws.column_dimensions['B'].width = 18; ws.column_dimensions['C'].width = 25; ws.column_dimensions['D'].width = 14; ws.column_dimensions['E'].width = 14; ws.column_dimensions['F'].width = 25
+        out = io.BytesIO(); wb.save(out)
+        
+        st.download_button(label="📥 Descargar Plantilla de Apuestas", data=out.getvalue(), file_name="Plantilla_Apuestas_Mundial.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        st.markdown("---")
+        uploaded_file = st.file_uploader("Sube tu Excel completado aquí:", type=["xlsx"])
+        if uploaded_file is not None:
+            try:
+                df_meta = pd.read_excel(uploaded_file, nrows=3, header=None)
+                competidor = str(df_meta.iloc[2, 1]).strip()
+                if not competidor or competidor == "nan" or competidor == "[Escriba su nombre aquí]": st.error("Error: Olvidaste escribir tu nombre en la celda amarilla B3.")
+                else:
+                    DatabaseManager.importar_apuestas_excel(pd.read_excel(uploaded_file, skiprows=4).assign(Competidor=competidor))
+                    st.success(f"¡Excelente! Pronósticos de '{competidor}' cargados correctamente.")
+            except Exception as e: st.error(f"Error procesando el archivo: {e}")
+    else: st.warning("El fixture no fue generado aún.")
+
+# ==========================================
+# TAB 3: PANEL ADMINISTRADOR
+# ==========================================
+with tabs[2]:
+    cfg = DatabaseManager.get_config()
+    pass_input = st.text_input("Ingresa la Contraseña de Administrador:", type="password")
+    if pass_input == cfg[6]:
+        st.success("Conexión Segura con PostgreSQL Cloud En Línea")
+        thin_b = Border(left=Side(style='thin', color='D3D3D3'), right=Side(style='thin', color='D3D3D3'), top=Side(style='thin', color='D3D3D3'), bottom=Side(style='thin', color='D3D3D3'))
+        
+        st.markdown("### 📊 Informes de Auditoría de Producción")
+        df_auditoria = DatabaseManager.obtener_datos_auditoria_puntos()
+        if not df_auditoria.empty:
+            wb_aud = openpyxl.Workbook(); ws_aud = wb_aud.active; ws_aud.title = "Auditoría"; ws_aud.views.sheetView[0].showGridLines = True
+            ws_aud.merge_cells("A1:J1"); ws_aud["A1"] = "INFORME DETALLADO DE DESGLOSE DE PUNTOS"
+            ws_aud["A1"].font = Font(name="Arial", size=14, bold=True, color="FFFFFF"); ws_aud["A1"].fill = PatternFill(start_color="1F4E5B", end_color="1F4E5B", fill_type="solid")
+            ws_aud["A1"].alignment = Alignment(horizontal="center", vertical="center"); ws_aud.row_dimensions[1].height = 35
+            
+            for col_idx, h in enumerate(['Competidor', 'Fase', 'Partido', 'Pronóstico', 'Resultado Real', 'Pts Ganador', 'Pts Exacto', 'Pts Goles', 'Pts Diferencia', 'Total Partido'], 1):
+                cell = ws_aud.cell(row=3, column=col_idx, value=h); cell.font = Font(name="Arial", size=11, bold=True, color="FFFFFF"); cell.fill = PatternFill(start_color="007bff", end_color="007bff", fill_type="solid")
+            
+            r_idx = 4
+            for _, row in df_auditoria.iterrows():
+                try: al, av, rl, rv = int(row['Al']), int(row['Av']), int(row['Rl']), int(row['Rv'])
+                except: continue
+                res_real = 1 if rl > rv else (0 if rl == rv else -1)
+                res_ap = 1 if al > av else (0 if al == av else -1)
+                pt_p, pt_ex, pt_pa, pt_df = (float(cfg[0]), float(cfg[1]), float(cfg[2]), float(cfg[3])) if "Grupo" in row['Fase'] else (float(cfg[7]), float(cfg[8]), float(cfg[9]), float(cfg[10]))
+                
+                p_win, p_ex, p_gol, p_df = 0.0, 0.0, 0.0, 0.0
+                if res_real == res_ap:
+                    p_win = pt_p
+                    if rl == al and rv == av: p_ex = pt_ex
+                    else:
+                        if rl == al or rv == av: p_gol = pt_pa
+                        if (rl - rv) == (al - av): p_df = pt_df
+                
+                ws_aud.cell(row=r_idx, column=1, value=row['Competidor'])
+                ws_aud.cell(row=r_idx, column=2, value=row['Fase'])
+                ws_aud.cell(row=r_idx, column=3, value=row['Partido'])
+                ws_aud.cell(row=r_idx, column=4, value=f"{al} - {av}")
+                ws_aud.cell(row=r_idx, column=5, value=f"{rl} - {rv}")
+                ws_aud.cell(row=r_idx, column=6, value=p_win)
+                ws_aud.cell(row=r_idx, column=7, value=p_ex)
+                ws_aud.cell(row=r_idx, column=8, value=p_gol)
+                ws_aud.cell(row=r_idx, column=9, value=p_df)
+                ws_aud.cell(row=r_idx, column=10, value=p_win + p_ex + p_gol + p_df)
+                r_idx += 1
+            out_aud = io.BytesIO(); wb_aud.save(out_aud)
+            st.download_button(label="📊 Descargar Excel: Desglose de Puntos", data=out_aud.getvalue(), file_name="Desglose_Puntos_Usuarios.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        else: st.caption("El desglose de puntos estará disponible cuando empiece el torneo.")
+        
+        st.markdown("---")
+        st.markdown("### 🔄 Carga de Resultados Oficiales del Torneo")
+        col_res1, col_res2 = st.columns(2)
+        with col_res1:
+            st.markdown("##### 🌐 Opción Principal: Sincronización Automática")
+            if st.button("🔄 Sincronizar Resultados vía API Now", use_container_width=True):
+                if not cfg[4]: st.error("Error: Falta tu API Key.")
+                else:
+                    try:
+                        res = requests.get("https://v3.football.api-sports.io/fixtures", headers={"x-rapidapi-key": cfg[4], "x-rapidapi-host": "v3.football.api-sports.io"}, params={"league": cfg[5], "season": "2026"})
+                        count = 0; df_p = DatabaseManager.get_partidos_con_nombres()
+                        for f in res.json().get("response", []):
+                            if f["fixture"]["status"]["short"] in ["FT", "AET", "PEN"]:
+                                al, av, gl, gv = f["teams"]["home"]["name"].lower(), f["teams"]["away"]["name"].lower(), f["goals"]["home"], f["goals"]["away"]
+                                for idx, row in df_p.iterrows():
+                                    if al in row['Local'].lower() and av in row['Visitante'].lower(): DatabaseManager.guardar_resultado(int(row['id_partido']), gl, gv); count += 1
+                        st.success(f"¡Sincronización terminada! {count} partidos actualizados."); st.rerun()
+                    except Exception as e: st.error(f"Error de API: {e}")
+        with col_res2:
+            st.markdown("##### 📂 Opción Secundaria: Contingencia Manual por Excel")
+            df_actual_goles = DatabaseManager.get_partidos_con_nombres()
+            if not df_actual_goles.empty:
+                wb_adm_res = openpyxl.Workbook(); ws_adm_res = wb_adm_res.active; ws_adm_res.title = "Resultados"; ws_adm_res.views.sheetView[0].showGridLines = True
+                ws_adm_res.merge_cells("A1:F1"); ws_adm_res["A1"] = "PRODE MUNDIAL - CARGA MANUAL DE RESULTADOS"
+                for col_num, h in enumerate(['ID_Partido', 'Fase', 'Local', 'Goles_L', 'Goles_V', 'Visitante'], 1):
+                    ws_adm_res.cell(row=5, column=col_num, value=h)
+                
+                row_n = 6
+                for _, r in df_actual_goles.iterrows():
+                    ws_adm_res.cell(row=row_n, column=1, value=r['id_partido'])
+                    ws_adm_res.cell(row=row_n, column=2, value=r['Fase'])
+                    ws_adm_res.cell(row=row_n, column=3, value=r['Local'])
+                    ws_adm_res.cell(row=row_n, column=4, value="" if pd.isna(r['GL Real']) else int(r['GL Real']))
+                    ws_adm_res.cell(row=row_n, column=5, value="" if pd.isna(r['GV Real']) else int(r['GV Real']))
+                    ws_adm_res.cell(row=row_n, column=6, value=r['Visitante'])
+                    row_n += 1
+                out_adm_res = io.BytesIO(); wb_adm_res.save(out_adm_res)
+                st.download_button(label="📥 Descargar Planilla de Resultados Reales", data=out_adm_res.getvalue(), file_name="Planilla_Resultados_Oficiales.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
+                uploaded_res_file = st.file_uploader("Subir Excel de Resultados Oficiales:", type=["xlsx"], key="admin_res_upload")
+                if uploaded_res_file is not None:
+                    try:
+                        DatabaseManager.importar_resultados_excel_admin(pd.read_excel(uploaded_res_file, skiprows=4))
+                        st.success("¡Resultados cargados desde Excel exitosamente!"); st.rerun()
+                    except Exception as e: st.error(f"Error procesando el Excel: {e}")
+        
+        st.markdown("---")
+        st.markdown("### ⚙️ Configuración del Sistema de Puntuación")
+        col_pts1, col_pts2 = st.columns(2)
+        with col_pts1:
+            st.markdown("##### 🏟️ Puntos Fase de Grupos")
+            p_prode = st.number_input("Pts Ganador (Grupos)", value=cfg[0])
+            p_exact = st.number_input("Pts Exacto (Grupos)", value=cfg[1])
+            p_parc = st.number_input("Pts Goles (Grupos)", value=cfg[2])
+            p_dif = st.number_input("Pts Diferencia (Grupos)", value=cfg[3])
+        with col_pts2:
+            st.markdown("##### ⚔️ Puntos Segunda Vuelta (KO)")
+            p_prode_ko = st.number_input("Pts Ganador (KO)", value=cfg[7])
+            p_exact_ko = st.number_input("Pts Exacto (KO)", value=cfg[8])
+            p_parc_ko = st.number_input("Pts Goles (KO)", value=cfg[9])
+            p_dif_ko = st.number_input("Pts Diferencia (KO)", value=cfg[10])
+            
+        st.markdown("##### 🔑 Credenciales, Llaves de Acceso y Fechas Límite")
+        ak = st.text_input("API Key de API-Football:", value=cfg[4])
+        id_l = st.text_input("ID de la Liga/Mundial:", value=cfg[5])
+        f_limite = st.text_input("Fecha límite (Formato AAAA-MM-DD HH:MM:SS):", value=cfg[11])
+        new_pass = st.text_input("Cambiar Contraseña de Administrador:", value=cfg[6])
+        
+        if st.button("Guardar Cambios del Sistema", use_container_width=True):
+            DatabaseManager.set_config(p_prode, p_exact, p_parc, p_dif, ak, id_l, new_pass, p_prode_ko, p_exact_ko, p_parc_ko, p_dif_ko, f_limite)
+            st.success("Configuración guardada."); st.rerun()
+
+        st.markdown("---")
+        st.markdown("### ⚔️ Habilitar Cruces Manuales de Eliminación Directa")
+        lista_eq = DatabaseManager.get_equipos_lista()
+        if lista_eq:
+            fase_sel = st.selectbox("Fase del Torneo:", ["16avos", "8vos", "4tos", "Semi", "Final"])
+            eq_loc_id = st.selectbox("Equipo Local:", [e[0] for e in lista_eq], format_func=lambda x: next(i[1] for i in lista_eq if i[0] == x))
+            eq_vis_id = st.selectbox("Equipo Visitante:", [e[0] for e in lista_eq], format_func=lambda x: next(i[1] for i in lista_eq if i[0] == x), key="vis")
+            if st.button("➕ Publicar Partido de Eliminación Directa", use_container_width=True):
+                if eq_loc_id == eq_vis_id: st.error("Error: Un equipo no puede enfrentarse a sí mismo.")
+                else: DatabaseManager.insertar_partido_manual(fase_sel, eq_loc_id, eq_vis_id); st.success(f"Partido de {fase_sel} inyectado."); st.rerun()
+
+        st.markdown("---")
+        st.markdown("### 📋 Grilla de Partidos Actuales Registrados")
+        df_adm_partidos = DatabaseManager.get_partidos_con_nombres()
+        if not df_adm_partidos.empty:
+            st.dataframe(df_adm_partidos, use_container_width=True, hide_index=True, column_config={
+                "id_partido": st.column_config.NumberColumn(label="ID"),
+                "Fase": st.column_config.TextColumn(label="Fase"),
+                "bandera_l": st.column_config.ImageColumn(label="🏳️"), 
+                "Local": st.column_config.TextColumn(label="Local"), 
+                "GL Real": st.column_config.NumberColumn(label="GL"), 
+                "GV Real": st.column_config.NumberColumn(label="GV"),
+                "Visitante": st.column_config.TextColumn(label="Visitante"),
+                "bandera_v": st.column_config.ImageColumn(label="🏳️")
+            })
+    else:
+        if pass_input: st.error("Contraseña incorrecta.")
