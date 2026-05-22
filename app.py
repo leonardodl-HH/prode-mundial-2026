@@ -11,70 +11,41 @@ from datetime import datetime
 # --- CONFIGURACIÓN DE PÁGINA STREAMLIT ---
 st.set_page_config(page_title="Prode Mundial 2026", page_icon="⚽", layout="wide")
 
-# --- INYECCIÓN DE DISEÑO ABSOLUTO: ELIMINA MENÚS NEGROS Y FUERZA MODO CLARO TOTAL ---
+# --- CONTROL DIRECTO DE VARIABLES DEL SISTEMA (FUERZA MODO CLARO ORIGINAL) ---
 st.markdown("""
     <style>
-    /* Fondo global de la aplicación y textos base */
-    .stApp, [data-testid="stAppViewContainer"], [data-testid="stHeader"], [data-testid="stMainBlockContainer"] {
+    :root {
+        --background-color: #FFFFFF;
+        --primary-color: #007BFF;
+        --secondary-background-color: #F8FAFC;
+        --text-color: #1F2937;
+    }
+    
+    /* Contenedor principal limpio */
+    .stApp, [data-testid="stAppViewContainer"], [data-testid="stHeader"] {
         background-color: #FFFFFF !important;
         color: #1F2937 !important;
     }
     
-    /* Forzado de color oscuro para textos de lectura, títulos y etiquetas */
-    h1, h2, h3, h4, h5, h6, p, span, label, li, small, th, td {
+    /* Forzado de color de fuentes */
+    h1, h2, h3, h4, h5, h6, p, span, label, li, small {
         color: #1F2937 !important;
     }
     
-    /* Blanqueo total de casilleros de texto, contraseñas y números (inputs) */
-    input, textarea, div[data-baseweb="input"], div[data-baseweb="base-input"], div[data-baseweb="input-control"] {
-        background-color: #F9FAFB !important;
+    /* Estilización homogénea de campos de entrada (Evita bloques negros) */
+    .stTextInput input, .stNumberInput input, .stPasswordInput input, div[data-baseweb="select"] > div {
+        background-color: #F8FAFC !important;
         color: #1F2937 !important;
-        border: 1px solid #D1D5DB !important;
+        border: 1px solid #E2E8F0 !important;
     }
     
-    div[data-baseweb="input"] input {
-        background-color: transparent !important;
-        color: #1F2937 !important;
-    }
-    
-    /* Forzado de fondo blanco para el Panel Administrador */
-    .stTextInput input, .stNumberInput input, .stPasswordInput input {
-        background-color: #F9FAFB !important;
-        color: #1F2937 !important;
-    }
-    
-    /* Corrección de menús desplegables (Selectbox) */
-    div[data-baseweb="select"], div[data-baseweb="select"] > div, div[role="button"] {
-        background-color: #F9FAFB !important;
-        color: #1F2937 !important;
-        border-color: #D1D5DB !important;
-    }
-    
-    div[data-testid="stSelectbox"] span, div[data-baseweb="select"] span {
-        color: #1F2937 !important;
-    }
-    
-    /* Lista de opciones flotantes de los menú desplegables */
-    div[data-baseweb="popover"], div[role="listbox"], ul[role="listbox"], li[role="option"] {
-        background-color: #FFFFFF !important;
-        color: #1F2937 !important;
-    }
-    
-    /* Botones de incremento y decremento numérico (+ y -) */
-    div[data-testid="stNumberInput"] button {
-        background-color: #E5E7EB !important;
-        color: #1F2937 !important;
-        border: 1px solid #D1D5DB !important;
-    }
-    
-    /* Botones generales de acción de la plataforma (Azul Corporativo) */
+    /* Botones de acción limpios (Texto blanco sobre fondo azul) */
     button[data-testid="baseButton-secondary"], button[data-testid="baseButton-primary"] {
         background-color: #007BFF !important;
         color: #FFFFFF !important;
         border: none !important;
-        border-radius: 6px !important;
-        font-weight: bold !important;
-        padding: 0.5rem 1rem !important;
+        border-radius: 4px !important;
+        font-weight: 600 !important;
     }
     
     button[data-testid="baseButton-secondary"]:hover, button[data-testid="baseButton-primary"]:hover {
@@ -82,43 +53,21 @@ st.markdown("""
         color: #FFFFFF !important;
     }
     
-    /* Caja de carga de archivos Excel */
-    div[data-testid="stFileUploader"] section {
-        background-color: #F9FAFB !important;
-        border: 2px dashed #CBD5E1 !important;
-        border-radius: 8px !important;
-    }
-    
-    /* Pestañas del menú superior (Tabs) */
+    /* Pestañas de navegación superiores */
     .stTabs [data-baseweb="tab-list"] {
-        background-color: #F3F4F6 !important;
-        padding: 6px !important;
-        border-radius: 8px !important;
+        background-color: #F1F5F9 !important;
+        padding: 4px !important;
+        border-radius: 6px !important;
     }
     
     .stTabs [data-baseweb="tab"] {
-        color: #4B5563 !important;
-        font-weight: 500 !important;
+        color: #64748B !important;
     }
     
     .stTabs [aria-selected="true"] {
         color: #007BFF !important;
-        font-weight: bold !important;
         background-color: #FFFFFF !important;
-        border-radius: 6px !important;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.1) !important;
-    }
-    
-    /* Menús desplegables informativos (Expanders) */
-    div[data-testid="stExpander"] {
-        background-color: #F9FAFB !important;
-        border: 1px solid #E5E7EB !important;
-        border-radius: 8px !important;
-    }
-    
-    /* Forzado de fondo blanco nativo en las grillas/tablas de datos */
-    div[data-testid="stDataFrame"], div[data-testid="stDataFrame"] > div {
-        background-color: #FFFFFF !important;
+        border-radius: 4px !important;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -224,7 +173,7 @@ class DatabaseManager:
     def set_config(p_prode, p_exact, p_parcial, p_dif, api_key, id_liga, admin_pass, p_prode_ko, p_exact_ko, p_parcial_ko, p_dif_ko, fecha_limite):
         conn = DatabaseManager.get_connection()
         cursor = conn.cursor()
-        cursor.execute("UPDATE configuracion SET pts_prode=%s, pts_exacto=%s, pts_parcial=%s, pts_dif=%s, api_key=%s, id_liga=%s, admin_pass=%s, pts_prode_ko=%s, pts_exacto_ko=%s, pts_parcial_ko=%s, pts_dif_ko=%s, fecha_limite=%s WHERE id=1", (p_prode, p_exact, p_parcial, p_dif, api_key, id_liga, admin_pass, p_prode_ko, p_exact_ko, p_parcial_ko, p_dif_ko, fecha_limite))
+        cursor.execute("UPDATE configuracion SET pts_prode=%s, pts_exacto=%s, pts_parcial=%s, pts_dif=%s, api_key=%s, id_liga=%s, admin_pass=%s, pts_prode_ko=%s, pts_exacto_ko=%s, pts_parcial=%s, pts_dif=%s, fecha_limite=%s WHERE id=1", (p_prode, p_exact, p_parcial, p_dif, api_key, id_liga, admin_pass, p_prode_ko, p_exact_ko, p_parcial_ko, p_dif_ko, fecha_limite))
         conn.commit()
         conn.close()
 
@@ -237,15 +186,14 @@ class DatabaseManager:
         conn.close()
         return datos
 
-    # --- REPARADO PARA ENCABEZADOS PERFECTOS NATIVOS ---
     @staticmethod
     def get_partidos_con_nombres():
         conn = DatabaseManager.get_connection()
         cursor = conn.cursor()
         query = '''
             SELECT 
-                p.id_partido as "ID", p.fase as "Fase", el.archivo_bandera as "Local Flag", el.nombre as "Local", 
-                p.goles_local as "GL Real", p.goles_visitante as "GV Real", ev.nombre as "Visitante", ev.archivo_bandera as "Visitante Flag"
+                p.id_partido as "id_partido", p.fase as "Fase", el.archivo_bandera as "bandera_l", el.nombre as "Local", 
+                p.goles_local as "GL Real", p.goles_visitante as "GV Real", ev.nombre as "Visitante", ev.archivo_bandera as "bandera_v"
             FROM partidos p 
             JOIN equipos el ON p.id_equipo_local = el.id_equipo 
             JOIN equipos ev ON p.id_equipo_visitante = ev.id_equipo 
@@ -349,7 +297,7 @@ class DatabaseManager:
     def get_apuestas_usuario_web(nombre_usuario):
         conn = DatabaseManager.get_connection()
         cursor = conn.cursor()
-        query = '''SELECT p.fase as "Fase", el.archivo_bandera as "Local Flag", a.equipo_l_predicho as "Local", a.apuesta_goles_local as "GL Pred", a.apuesta_goles_visitante as "GV Pred", a.equipo_v_predicho as "Visitante", ev.archivo_bandera as "Visitante Flag", p.goles_local as "GL Real", p.goles_visitante as "GV Real", a.puntos_obtenidos as "Pts Ganados" FROM apuestas a JOIN usuarios u ON a.id_usuario = u.id_usuario JOIN partidos p ON a.id_partido = p.id_partido JOIN equipos el ON p.id_equipo_local = el.id_equipo JOIN equipos ev ON p.id_equipo_visitante = ev.id_equipo WHERE u.nombre = %s'''
+        query = '''SELECT p.fase as "Fase", el.archivo_bandera as "bandera_l", a.equipo_l_predicho as "Local", a.apuesta_goles_local as "GL Pred", a.apuesta_goles_visitante as "GV Pred", a.equipo_v_predicho as "Visitante", ev.archivo_bandera as "bandera_v", p.goles_local as "GL Real", p.goles_visitante as "GV Real", a.puntos_obtenidos as "Pts Ganados" FROM apuestas a JOIN usuarios u ON a.id_usuario = u.id_usuario JOIN partidos p ON a.id_partido = p.id_partido JOIN equipos el ON p.id_equipo_local = el.id_equipo JOIN equipos ev ON p.id_equipo_visitante = ev.id_equipo WHERE u.nombre = %s'''
         cursor.execute(query, (nombre_usuario,))
         columns = [desc[0] for desc in cursor.description]
         df = pd.DataFrame(cursor.fetchall(), columns=columns)
@@ -370,13 +318,10 @@ class DatabaseManager:
 # --- INICIALIZACIÓN ---
 DatabaseManager.init_db()
 
-st.title("🏆 Prode Mundial 2026 — Dashboard en Vivo")
-st.markdown("Bienvenido al centro de estadísticas profesional. MODO CLARO TOTAL ACTIVADO.")
-
 tabs = st.tabs(["📊 Posiciones y Apuestas", "📤 Subir Mis Apuestas", "⚙️ Panel Administrador"])
 
 # ==========================================
-# TAB 1: DASHBOARD PÚBLICO
+# TAB 1: DASHBOARD PÚBLICO (NATIVO COMPLETO)
 # ==========================================
 with tabs[0]:
     cfg = DatabaseManager.get_config()
@@ -400,16 +345,16 @@ with tabs[0]:
         st.subheader("📅 Fixture y Resultados Oficiales")
         df_public_partidos = DatabaseManager.get_partidos_con_nombres()
         if not df_public_partidos.empty:
-            # --- RENDERIZADO NATIVO PERFECTO: EVITA FILAS NEGRAS EN CANVAS ---
+            # RENDERIZADO NATIVO ABSOLUTO: El motor de Streamlit gestiona el Light Theme sin inyecciones que rompan el Canvas
             st.dataframe(df_public_partidos, use_container_width=True, hide_index=True, column_config={
-                "ID": st.column_config.NumberColumn(label="ID"),
+                "id_partido": st.column_config.NumberColumn(label="ID"),
                 "Fase": st.column_config.TextColumn(label="Fase"),
-                "Local Flag": st.column_config.ImageColumn(label="🏳️"), 
+                "bandera_l": st.column_config.ImageColumn(label="🏳️"), 
                 "Local": st.column_config.TextColumn(label="Local"), 
                 "GL Real": st.column_config.NumberColumn(label="GL"), 
                 "GV Real": st.column_config.NumberColumn(label="GV"),
                 "Visitante": st.column_config.TextColumn(label="Visitante"),
-                "Visitante Flag": st.column_config.ImageColumn(label="🏳️")
+                "bandera_v": st.column_config.ImageColumn(label="🏳️")
             })
         else: st.info("El fixture todavía no fue generado.")
 
@@ -424,12 +369,12 @@ with tabs[0]:
                 if not df_user_ap.empty:
                     st.dataframe(df_user_ap, use_container_width=True, hide_index=True, column_config={
                         "Fase": st.column_config.TextColumn(label="Fase"),
-                        "Local Flag": st.column_config.ImageColumn(label="🏳️"),
+                        "bandera_l": st.column_config.ImageColumn(label="🏳️"),
                         "Local": st.column_config.TextColumn(label="Local"),
                         "GL Pred": st.column_config.NumberColumn(label="GL Pred"),
                         "GV Pred": st.column_config.NumberColumn(label="GV Pred"),
                         "Visitante": st.column_config.TextColumn(label="Visitante"),
-                        "Visitante Flag": st.column_config.ImageColumn(label="🏳️"),
+                        "bandera_v": st.column_config.ImageColumn(label="🏳️"),
                         "GL Real": st.column_config.NumberColumn(label="GL Real"),
                         "GV Real": st.column_config.NumberColumn(label="GV Real"),
                         "Pts Ganados": st.column_config.NumberColumn(label="Pts Ganados")
@@ -465,7 +410,7 @@ with tabs[1]:
             if prev_fase and r['Fase'] != prev_fase:
                 for col_num in range(1, 7): ws.cell(row=row_num-1, column=col_num).border = thick_bot
             ws.row_dimensions[row_num].height = 24
-            ws.cell(row=row_num, column=1, value=r['ID']).alignment = Alignment(horizontal="center")
+            ws.cell(row=row_num, column=1, value=r['id_partido']).alignment = Alignment(horizontal="center")
             ws.cell(row=row_num, column=2, value=r['Fase']).alignment = Alignment(horizontal="center")
             ws.cell(row=row_num, column=3, value=r['Local'])
             ws.cell(row=row_num, column=6, value=r['Visitante'])
@@ -494,27 +439,26 @@ with tabs[1]:
     else: st.warning("El fixture no fue generado aún.")
 
 # ==========================================
-# TAB 3: ADMIN PANEL (PROTEGIDO)
+# TAB 3: PANEL ADMINISTRADOR (DISTRIBUCIÓN SECUENCIAL)
 # ==========================================
 with tabs[2]:
     cfg = DatabaseManager.get_config()
-    # --- RENDERIZADO NATIVO PERFECTO: EVITA BLOQUES NEGROS EN CANVAS ---
     pass_input = st.text_input("Ingresa la Contraseña de Administrador:", type="password")
+    
     if pass_input == cfg[6]:
-        st.success("Conexión Segura con PostgreSQL Cloud En Línea")
-        thin_b = Border(left=Side(style='thin', color='D3D3D3'), right=Side(style='thin', color='D3D3D3'), top=Side(style='thin', color='D3D3D3'), bottom=Side(style='thin', color='D3D3D3'))
+        st.success("Conexión Segura con PostgreSQL Cloud Activa")
         
+        # DISTRIBUCIÓN HORIZONTAL DE SECCIÓN SUPERIOR
         st.markdown("### 📊 Informes de Auditoría de Producción")
         df_auditoria = DatabaseManager.obtener_datos_auditoria_puntos()
         if not df_auditoria.empty:
             wb_aud = openpyxl.Workbook(); ws_aud = wb_aud.active; ws_aud.title = "Auditoría"; ws_aud.views.sheetView[0].showGridLines = True
-            ws_aud.merge_cells("A1:J1"); ws_aud["A1"] = "INFORME DETALLADO DE DESGLOSE DE PUNTOS"
+            ws_aud.merge_cells("A1:Camp1"); ws_aud["A1"] = "INFORME DETALLADO DE DESGLOSE DE PUNTOS"
             ws_aud["A1"].font = Font(name="Arial", size=14, bold=True, color="FFFFFF"); ws_aud["A1"].fill = PatternFill(start_color="1F4E5B", end_color="1F4E5B", fill_type="solid")
             ws_aud["A1"].alignment = Alignment(horizontal="center", vertical="center"); ws_aud.row_dimensions[1].height = 35
             
             for col_idx, h in enumerate(['Competidor', 'Fase', 'Partido', 'Pronóstico', 'Resultado Real', 'Pts Ganador', 'Pts Exacto', 'Pts Goles', 'Pts Diferencia', 'Total Partido'], 1):
-                cell = ws_aud.cell(row=3, column=col_idx, value=h); cell.font = Font(name="Arial", size=11, bold=True, color="FFFFFF"); cell.fill = PatternFill(start_color="007bff", end_color="007bff", fill_type="solid"); cell.alignment = Alignment(horizontal="center"); cell.border = thin_b
-            ws_aud.row_dimensions[3].height = 28
+                cell = ws_aud.cell(row=3, column=col_idx, value=h); cell.font = Font(name="Arial", size=11, bold=True, color="FFFFFF"); cell.fill = PatternFill(start_color="007bff", end_color="007bff", fill_type="solid"); cell.alignment = Alignment(horizontal="center")
             
             r_idx = 4
             for _, row in df_auditoria.iterrows():
@@ -533,28 +477,26 @@ with tabs[2]:
                         if (rl - rv) == (al - av): p_df = pt_df
                 
                 ws_aud.cell(row=r_idx, column=1, value=row['Competidor'])
-                ws_aud.cell(row=r_idx, column=2, value=row['Fase']).alignment = Alignment(horizontal="center")
+                ws_aud.cell(row=r_idx, column=2, value=row['Fase'])
                 ws_aud.cell(row=r_idx, column=3, value=row['Partido'])
-                ws_aud.cell(row=r_idx, column=4, value=f"{al} - {av}").alignment = Alignment(horizontal="center")
-                ws_aud.cell(row=r_idx, column=5, value=f"{rl} - {rv}").alignment = Alignment(horizontal="center")
-                ws_aud.cell(row=r_idx, column=6, value=p_win).alignment = Alignment(horizontal="center")
-                ws_aud.cell(row=r_idx, column=7, value=p_ex).alignment = Alignment(horizontal="center")
-                ws_aud.cell(row=r_idx, column=8, value=p_gol).alignment = Alignment(horizontal="center")
-                ws_aud.cell(row=r_idx, column=9, value=p_df).alignment = Alignment(horizontal="center")
-                c_tot = ws_aud.cell(row=r_idx, column=10, value=p_win + p_ex + p_gol + p_df); c_tot.font = Font(bold=True); c_tot.alignment = Alignment(horizontal="center"); c_tot.fill = PatternFill(start_color="F0F8FF", end_color="F0F8FF", fill_type="solid")
-                for c in range(1, 11): ws_aud.cell(row=r_idx, column=c).border = thin_b
+                ws_aud.cell(row=r_idx, column=4, value=f"{al} - {av}")
+                ws_aud.cell(row=r_idx, column=5, value=f"{rl} - {rv}")
+                ws_aud.cell(row=r_idx, column=6, value=p_win)
+                ws_aud.cell(row=r_idx, column=7, value=p_ex)
+                ws_aud.cell(row=r_idx, column=8, value=p_gol)
+                ws_aud.cell(row=r_idx, column=9, value=p_df)
+                ws_aud.cell(row=r_idx, column=10, value=p_win + p_ex + p_gol + p_df)
                 r_idx += 1
-            for col in ws_aud.columns: ws_aud.column_dimensions[openpyxl.utils.get_column_letter(col[0].column)].width = max(max(len(str(cell.value or '')) for cell in col) + 3, 12)
             out_aud = io.BytesIO(); wb_aud.save(out_aud)
             st.download_button(label="📊 Descargar Excel: Desglose de Puntos", data=out_aud.getvalue(), file_name="Desglose_Puntos_Usuarios.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
         else: st.caption("El desglose de puntos estará disponible cuando empiece el torneo.")
         
         st.markdown("---")
         st.markdown("### 🔄 Carga de Resultados Oficiales del Torneo")
+        
         col_res1, col_res2 = st.columns(2)
         with col_res1:
-            st.markdown("##### 🌐 Opción Principal: Sincronización Automática")
-            # --- RENDERIZADO NATIVO PERFECTO: EVITA BLOQUES NEGROS EN CANVAS ---
+            st.markdown("##### 🌐 Sincronización Automática")
             if st.button("🔄 Sincronizar Resultados vía API Now", use_container_width=True):
                 if not cfg[4]: st.error("Error: Falta tu API Key.")
                 else:
@@ -569,31 +511,23 @@ with tabs[2]:
                         st.success(f"¡Sincronización terminada! {count} partidos actualizados."); st.rerun()
                     except Exception as e: st.error(f"Error de API: {e}")
         with col_res2:
-            st.markdown("##### 📂 Opción Secundaria: Contingencia Manual por Excel")
+            st.markdown("##### 📂 Contingencia Manual por Excel")
             df_actual_goles = DatabaseManager.get_partidos_con_nombres()
             if not df_actual_goles.empty:
                 wb_adm_res = openpyxl.Workbook(); ws_adm_res = wb_adm_res.active; ws_adm_res.title = "Resultados"; ws_adm_res.views.sheetView[0].showGridLines = True
-                ws_adm_res.merge_cells("A1:F1"); ws_adm_res["A1"] = "PRODE MUNDIAL - CARGA MANUAL DE RESULTADOS"
-                ws_adm_res["A1"].font = Font(name="Arial", size=13, bold=True, color="FFFFFF"); ws_adm_res["A1"].fill = PatternFill(start_color="8B0000", end_color="8B0000", fill_type="solid")
-                ws_adm_res["A1"].alignment = Alignment(horizontal="center", vertical="center"); ws_adm_res.row_dimensions[1].height = 35
+                ws_adm_res.merge_cells("A1:F1"); ws_adm_res["A1"] = "PRODE MUNDIAL - CARGA MANUAL"
                 for col_num, h in enumerate(['ID_Partido', 'Fase', 'Local', 'Goles_L', 'Goles_V', 'Visitante'], 1):
-                    c = ws_adm_res.cell(row=5, column=col_num, value=h); c.font = Font(name="Arial", size=11, bold=True, color="FFFFFF"); c.fill = PatternFill(start_color="343a40", end_color="343a40", fill_type="solid"); c.alignment = Alignment(horizontal="center"); c.border = thin_b
-                
+                    ws_adm_res.cell(row=5, column=col_num, value=h)
                 row_n = 6
                 for _, r in df_actual_goles.iterrows():
-                    ws_adm_res.cell(row=row_n, column=1, value=r['ID']).alignment = Alignment(horizontal="center")
-                    ws_adm_res.cell(row=row_n, column=2, value=r['Fase']).alignment = Alignment(horizontal="center")
+                    ws_adm_res.cell(row=row_n, column=1, value=r['id_partido'])
+                    ws_adm_res.cell(row=row_n, column=2, value=r['Fase'])
                     ws_adm_res.cell(row=row_n, column=3, value=r['Local'])
-                    ws_adm_res.cell(row=row_n, column=4, value="" if pd.isna(r['GL Real']) else int(r['GL Real'])).alignment = Alignment(horizontal="center")
-                    ws_adm_res.cell(row=row_n, column=5, value="" if pd.isna(r['GV Real']) else int(r['GV Real'])).alignment = Alignment(horizontal="center")
+                    ws_adm_res.cell(row=row_n, column=4, value="" if pd.isna(r['GL Real']) else int(r['GL Real']))
+                    ws_adm_res.cell(row=row_n, column=5, value="" if pd.isna(r['GV Real']) else int(r['GV Real']))
                     ws_adm_res.cell(row=row_n, column=6, value=r['Visitante'])
-                    for c in range(1, 7):
-                        ws_adm_res.cell(row=row_n, column=c).border = thin_b
-                        if c in [4, 5]: ws_adm_res.cell(row=row_n, column=c).fill = PatternFill(start_color="FFF8DC", end_color="FFF8DC", fill_type="solid")
                     row_n += 1
-                ws_adm_res.column_dimensions['A'].width = 12; ws_adm_res.column_dimensions['B'].width = 15; ws_adm_res.column_dimensions['C'].width = 22; ws_adm_res.column_dimensions['D'].width = 12; ws_adm_res.column_dimensions['E'].width = 12; ws_adm_res.column_dimensions['F'].width = 22
                 out_adm_res = io.BytesIO(); wb_adm_res.save(out_adm_res)
-                # --- RENDERIZADO NATIVO PERFECTO: EVITA BLOQUES NEGROS EN CANVAS ---
                 st.download_button(label="📥 Descargar Planilla de Resultados Reales", data=out_adm_res.getvalue(), file_name="Planilla_Resultados_Oficiales.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
                 uploaded_res_file = st.file_uploader("Subir Excel de Resultados Oficiales:", type=["xlsx"], key="admin_res_upload")
                 if uploaded_res_file is not None:
@@ -601,46 +535,59 @@ with tabs[2]:
                         DatabaseManager.importar_resultados_excel_admin(pd.read_excel(uploaded_res_file, skiprows=4))
                         st.success("¡Resultados cargados desde Excel exitosamente!"); st.rerun()
                     except Exception as e: st.error(f"Error procesando el Excel: {e}")
+
+        st.markdown("---")
         
+        # RESOLUCIÓN DE CORTE VERTICAL: Bloques secuenciales limpios para evitar solapamientos
+        st.markdown("### ⚙️ Configuración del Sistema de Puntuación")
+        col_pts1, col_pts2 = st.columns(2)
+        with col_pts1:
+            st.markdown("##### 🏟️ Puntos Fase de Grupos")
+            p_prode = st.number_input("Pts Ganador (Grupos)", value=cfg[0])
+            p_exact = st.number_input("Pts Exacto (Grupos)", value=cfg[1])
+            p_parc = st.number_input("Pts Goles (Grupos)", value=cfg[2])
+            p_dif = st.number_input("Pts Diferencia (Grupos)", value=cfg[3])
+        with col_pts2:
+            st.markdown("##### ⚔️ Puntos Segunda Vuelta (KO)")
+            p_prode_ko = st.number_input("Pts Ganador (KO)", value=cfg[7])
+            p_exact_ko = st.number_input("Pts Exacto (KO)", value=cfg[8])
+            p_parc_ko = st.number_input("Pts Goles (KO)", value=cfg[9])
+            p_dif_ko = st.number_input("Pts Diferencia (KO)", value=cfg[10])
+            
+        st.markdown("##### 🔑 Credenciales, Llaves de Acceso y Fechas Límite")
+        ak = st.text_input("API Key de API-Football:", value=cfg[4])
+        id_l = st.text_input("ID de la Liga/Mundial:", value=cfg[5])
+        f_limite = st.text_input("Fecha límite de visualización (Formato AAAA-MM-DD HH:MM:SS):", value=cfg[11])
+        new_pass = st.text_input("Cambiar Contraseña de Administrador:", value=cfg[6])
+        
+        if st.button("Guardar Cambios del Sistema", use_container_width=True):
+            DatabaseManager.set_config(p_prode, p_exact, p_parc, p_dif, ak, id_l, new_pass, p_prode_ko, p_exact_ko, p_parc_ko, p_dif_ko, f_limite)
+            st.success("Configuración actualizada en la nube de Neon."); st.rerun()
+
         st.markdown("---")
-        col_adm1, col_adm2 = st.columns(2)
-        with col_adm1:
-            st.subheader("### Habilitar Eliminación Directa (Mano a Mano)")
-            lista_eq = DatabaseManager.get_equipos_lista()
-            if lista_eq:
-                # --- RENDERIZADO NATIVO PERFECTO: EVITA BLOQUES NEGROS EN CANVAS ---
-                fase_sel = st.selectbox("Fase:", ["16avos", "8vos", "4tos", "Semi", "Final"])
-                eq_loc_id = st.selectbox("Selecciona Equipo Local:", [e[0] for e in lista_eq], format_func=lambda x: next(i[1] for i in lista_eq if i[0] == x))
-                eq_vis_id = st.selectbox("Selecciona Equipo Visitante:", [e[0] for e in lista_eq], format_func=lambda x: next(i[1] for i in lista_eq if i[0] == x), key="vis")
-                # --- RENDERIZADO NATIVO PERFECTO: EVITA BLOQUES NEGROS EN CANVAS ---
-                if st.button("➕ Publicar Cruce de Eliminación", use_container_width=True):
-                    if eq_loc_id == eq_vis_id: st.error("Un equipo no puede jugar contra sí mismo.")
-                    else: DatabaseManager.insertar_partido_manual(fase_sel, eq_loc_id, eq_vis_id); st.success(f"Partido de {fase_sel} publicado."); st.rerun()
-                        
-        with col_adm2:
-            st.subheader("⚙️ Configuración de Puntuación y Sistema")
-            st.markdown("##### 🏟️ Fase de Grupos / ⚔️ Segunda Vuelta KO")
-            # --- RENDERIZADO NATIVO PERFECTO: EVITA BLOQUES NEGROS EN CANVAS ---
-            p_prode = st.number_input("Pts Ganador", value=cfg[0]); p_exact = st.number_input("Pts Exacto", value=cfg[1]); p_parc = st.number_input("Pts Goles", value=cfg[2]); p_dif = st.number_input("Pts Diferencia", value=cfg[3])
-            p_prode_ko = st.number_input("Pts Ganador KO", value=cfg[7]); p_exact_ko = st.number_input("Pts Exacto KO", value=cfg[8]); p_parc_ko = st.number_input("Pts Goles KO", value=cfg[9]); p_dif_ko = st.number_input("Pts Diferencia KO", value=cfg[10])
-            st.markdown("##### 🔑 Credenciales, Llaves y Fechas")
-            ak = st.text_input("API Key de API-Football:", value=cfg[4]); id_l = st.text_input("ID de la Liga/Mundial:", value=cfg[5]); f_limite = st.text_input("Fecha límite (AAAA-MM-DD HH:MM:SS):", value=cfg[11]); new_pass = st.text_input("Nueva Clave Admin:", value=cfg[6])
-            # --- RENDERIZADO NATIVO PERFECTO: EVITA BLOQUES NEGROS EN CANVAS ---
-            if st.button("Guardar Cambios de Configuración", use_container_width=True):
-                DatabaseManager.set_config(p_prode, p_exact, p_parc, p_dif, ak, id_l, new_pass, p_prode_ko, p_exact_ko, p_parc_ko, p_dif_ko, f_limite); st.success("Configuración guardada."); st.rerun()
-                
+        st.markdown("### ⚔️ Habilitar Cruces Manuales de Eliminación Directa")
+        lista_eq = DatabaseManager.get_equipos_lista()
+        if lista_eq:
+            fase_sel = st.selectbox("Fase del Torneo:", ["16avos", "8vos", "4tos", "Semi", "Final"])
+            eq_loc_id = st.selectbox("Equipo Local:", [e[0] for e in lista_eq], format_func=lambda x: next(i[1] for i in lista_eq if i[0] == x))
+            eq_vis_id = st.selectbox("Equipo Visitante:", [e[0] for e in lista_eq], format_func=lambda x: next(i[1] for i in lista_eq if i[0] == x), key="vis")
+            if st.button("➕ Publicar Partido de Eliminación Directa", use_container_width=True):
+                if eq_loc_id == eq_vis_id: st.error("Error: Un equipo no puede enfrentarse a sí mismo.")
+                else: DatabaseManager.insertar_partido_manual(fase_sel, eq_loc_id, eq_vis_id); st.success(f"Partido de {fase_sel} inyectado."); st.rerun()
+
         st.markdown("---")
-        st.subheader("### Grilla de Partidos Actuales")
+        st.markdown("### 📋 Grilla de Partidos Actuales Registrados")
         df_adm_partidos = DatabaseManager.get_partidos_con_nombres()
-        st.dataframe(df_adm_partidos, use_container_width=True, hide_index=True, column_config={
-            "ID": st.column_config.NumberColumn(label="ID"),
-            "Fase": st.column_config.TextColumn(label="Fase"),
-            "Local Flag": st.column_config.ImageColumn(label="🏳️"), 
-            "Local": st.column_config.TextColumn(label="Local"), 
-            "GL Real": st.column_config.NumberColumn(label="GL"), 
-            "GV Real": st.column_config.NumberColumn(label="GV"),
-            "Visitante": st.column_config.TextColumn(label="Visitante"),
-            "Visitante Flag": st.column_config.ImageColumn(label="🏳️")
-        })
+        if not df_adm_partidos.empty:
+            st.dataframe(df_adm_partidos, use_container_width=True, hide_index=True, column_config={
+                "id_partido": st.column_config.NumberColumn(label="ID"),
+                "Fase": st.column_config.TextColumn(label="Fase"),
+                "bandera_l": st.column_config.ImageColumn(label="🏳️"), 
+                "Local": st.column_config.TextColumn(label="Local"), 
+                "GL Real": st.column_config.NumberColumn(label="GL"), 
+                "GV Real": st.column_config.NumberColumn(label="GV"),
+                "Visitante": st.column_config.TextColumn(label="Visitante"),
+                "bandera_v": st.column_config.ImageColumn(label="🏳️")
+            })
     else:
         if pass_input: st.error("Contraseña incorrecta.")
