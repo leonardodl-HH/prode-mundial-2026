@@ -11,6 +11,39 @@ from datetime import datetime
 # --- CONFIGURACIÓN DE PÁGINA STREAMLIT ---
 st.set_page_config(page_title="Prode Mundial 2026", page_icon="⚽", layout="wide")
 
+# --- INYECCIÓN DE DISEÑO: FONDO BLANCO PROFESIONAL Y FIJO ---
+st.markdown("""
+    <style>
+    [data-testid="stAppViewContainer"] {
+        background-color: #FFFFFF !important;
+        color: #1E1E1E !important;
+    }
+    [data-testid="stHeader"] {
+        background-color: rgba(255, 255, 255, 0) !important;
+    }
+    h1, h2, h3, h4, h5, h6, p, span, label, div {
+        color: #1E1E1E !important;
+    }
+    .stTabs [data-baseweb="tab-list"] {
+        background-color: #F3F4F6 !important;
+        padding: 8px !important;
+        border-radius: 8px !important;
+    }
+    .stTabs [data-baseweb="tab"] {
+        color: #555555 !important;
+    }
+    .stTabs [aria-selected="true"] {
+        color: #007BFF !important;
+        font-weight: bold !important;
+    }
+    div[data-testid="stExpander"] {
+        background-color: #F9FAFB !important;
+        border: 1px solid #E5E7EB !important;
+        border-radius: 8px !important;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
 # --- CONEXIÓN DE ARQUITECTURA PROFESIONAL (POSTGRESQL CLOUD) ---
 class DatabaseManager:
     @staticmethod
@@ -125,15 +158,14 @@ class DatabaseManager:
         conn.close()
         return datos
 
-    # --- REPARADO PARA POSTGRESQL (COMILLAS DOBLES EN ALIAS) ---
     @staticmethod
     def get_partidos_con_nombres():
         conn = DatabaseManager.get_connection()
         cursor = conn.cursor()
         query = '''
             SELECT 
-                p.id_partido as "id_partido", p.fase as "Fase", el.archivo_bandera as " ", el.nombre as "Local", 
-                p.goles_local as "GL Real", p.goles_visitante as "GV Real", ev.nombre as "Visitante", ev.archivo_bandera as "  "
+                p.id_partido as "id_partido", p.fase as "Fase", el.archivo_bandera as "bandera_l", el.nombre as "Local", 
+                p.goles_local as "GL Real", p.goles_visitante as "GV Real", ev.nombre as "Visitante", ev.archivo_bandera as "bandera_v"
             FROM partidos p 
             JOIN equipos el ON p.id_equipo_local = el.id_equipo 
             JOIN equipos ev ON p.id_equipo_visitante = ev.id_equipo 
@@ -233,12 +265,11 @@ class DatabaseManager:
         conn.close()
         return df_rank
 
-    # --- REPARADO PARA POSTGRESQL (COMILLAS DOBLES EN ALIAS) ---
     @staticmethod
     def get_apuestas_usuario_web(nombre_usuario):
         conn = DatabaseManager.get_connection()
         cursor = conn.cursor()
-        query = '''SELECT p.fase as "Fase", el.archivo_bandera as " ", a.equipo_l_predicho as "Local", a.apuesta_goles_local as "GL Pred", a.apuesta_goles_visitante as "GV Pred", a.equipo_v_predicho as "Visitante", ev.archivo_bandera as "  ", p.goles_local as "GL Real", p.goles_visitante as "GV Real", a.puntos_obtenidos as "Pts Ganados" FROM apuestas a JOIN usuarios u ON a.id_usuario = u.id_usuario JOIN partidos p ON a.id_partido = p.id_partido JOIN equipos el ON p.id_equipo_local = el.id_equipo JOIN equipos ev ON p.id_equipo_visitante = ev.id_equipo WHERE u.nombre = %s'''
+        query = '''SELECT p.fase as "Fase", el.archivo_bandera as "bandera_l", a.equipo_l_predicho as "Local", a.apuesta_goles_local as "GL Pred", a.apuesta_goles_visitante as "GV Pred", a.equipo_v_predicho as "Visitante", ev.archivo_bandera as "bandera_v", p.goles_local as "GL Real", p.goles_visitante as "GV Real", a.puntos_obtenidos as "Pts Ganados" FROM apuestas a JOIN usuarios u ON a.id_usuario = u.id_usuario JOIN partidos p ON a.id_partido = p.id_partido JOIN equipos el ON p.id_equipo_local = el.id_equipo JOIN equipos ev ON p.id_equipo_visitante = ev.id_equipo WHERE u.nombre = %s'''
         cursor.execute(query, (nombre_usuario,))
         columns = [desc[0] for desc in cursor.description]
         df = pd.DataFrame(cursor.fetchall(), columns=columns)
@@ -259,6 +290,9 @@ class DatabaseManager:
 # --- INICIALIZACIÓN ---
 DatabaseManager.init_db()
 
+st.title("🏆 Prode Mundial 2026 — Dashboard en Vivo")
+st.markdown("Bienvenido al centro de estadísticas profesional. Sincronización en la nube nativa permanente.")
+
 tabs = st.tabs(["📊 Posiciones y Apuestas", "📤 Subir Mis Apuestas", "⚙️ Panel Administrador"])
 
 # ==========================================
@@ -274,7 +308,7 @@ with tabs[0]:
         with col_r2: st.markdown(f"**⚔️ Segunda Vuelta (KO):**\n* Ganador KO: **+{cfg[7]} Pts**\n* Exacto KO: **+{cfg[8]} Pts**\n* Goles KO: **+{cfg[9]} Pts**\n* Diferencia KO: **+{cfg[10]} Pts**")
             
     st.markdown("---")
-    col1, col2 = st.columns([1, 1.2])
+    col1, col2 = st.columns([1, 1.3])
     with col1:
         st.subheader("⭐ Tabla de Posiciones")
         df_rank = DatabaseManager.calcular_ranking_avanzado()
@@ -287,14 +321,18 @@ with tabs[0]:
         df_public_partidos = DatabaseManager.get_partidos_con_nombres()
         if not df_public_partidos.empty:
             fases_unicas = df_public_partidos['Fase'].unique()
-            fase_colors = {fase: 'rgba(30, 144, 255, 0.12)' if idx % 2 == 0 else 'rgba(0, 0, 0, 0)' for idx, fase in enumerate(fases_unicas)}
+            fase_colors = {fase: 'rgba(30, 144, 255, 0.08)' if idx % 2 == 0 else 'rgba(0, 0, 0, 0)' for idx, fase in enumerate(fases_unicas)}
             
-            # --- CORREGIDO: MAPEADO PRECISO DE COLUMNAS CON SUS NUEVAS ETIQUETAS DE POSTGRES ---
+            # Encabezados re-alineados explícitamente usando emoticones en vez de strings vacíos
             st.dataframe(df_public_partidos.style.apply(lambda r: [f"background-color: {fase_colors.get(r['Fase'], '')}" for _ in r], axis=1), use_container_width=True, hide_index=True, column_config={
-                " ": st.column_config.ImageColumn(label=""), 
-                "  ": st.column_config.ImageColumn(label=""), 
+                "id_partido": st.column_config.NumberColumn(label="ID"),
+                "Fase": st.column_config.TextColumn(label="Fase"),
+                "bandera_l": st.column_config.ImageColumn(label="🏳️"), 
+                "Local": st.column_config.TextColumn(label="Local"), 
                 "GL Real": st.column_config.NumberColumn(label="GL"), 
-                "GV Real": st.column_config.NumberColumn(label="GV")
+                "GV Real": st.column_config.NumberColumn(label="GV"),
+                "Visitante": st.column_config.TextColumn(label="Visitante"),
+                "bandera_v": st.column_config.ImageColumn(label="🏳️")
             })
         else: st.info("El fixture todavía no fue generado.")
 
@@ -307,10 +345,18 @@ with tabs[0]:
             if user_sel:
                 df_user_ap = DatabaseManager.get_apuestas_usuario_web(user_sel)
                 if not df_user_ap.empty:
-                    colors_usr = {fase: 'rgba(30, 144, 255, 0.12)' if idx % 2 == 0 else 'rgba(0, 0, 0, 0)' for idx, fase in enumerate(df_user_ap['Fase'].unique())}
+                    colors_usr = {fase: 'rgba(30, 144, 255, 0.08)' if idx % 2 == 0 else 'rgba(0, 0, 0, 0)' for idx, fase in enumerate(df_user_ap['Fase'].unique())}
                     st.dataframe(df_user_ap.style.apply(lambda r: [f"background-color: {colors_usr.get(r['Fase'], '')}" for _ in r], axis=1), use_container_width=True, hide_index=True, column_config={
-                        " ": st.column_config.ImageColumn(label=""), 
-                        "  ": st.column_config.ImageColumn(label="")
+                        "Fase": st.column_config.TextColumn(label="Fase"),
+                        "bandera_l": st.column_config.ImageColumn(label="🏳️"),
+                        "Local": st.column_config.TextColumn(label="Local"),
+                        "GL Pred": st.column_config.NumberColumn(label="GL Pred"),
+                        "GV Pred": st.column_config.NumberColumn(label="GV Pred"),
+                        "Visitante": st.column_config.TextColumn(label="Visitante"),
+                        "bandera_v": st.column_config.ImageColumn(label="🏳️"),
+                        "GL Real": st.column_config.NumberColumn(label="GL Real"),
+                        "GV Real": st.column_config.NumberColumn(label="GV Real"),
+                        "Pts Ganados": st.column_config.NumberColumn(label="Pts Ganados")
                     })
         else: st.info("Aún no hay usuarios cargados en el sistema.")
     else: st.warning(f"🔒 **Pronósticos Protegidos:** Las apuestas de todos se revelarán el **{cfg[11]}** para evitar copias.")
@@ -504,7 +550,16 @@ with tabs[2]:
         st.subheader("### Grilla de Partidos Actuales")
         df_adm_partidos = DatabaseManager.get_partidos_con_nombres()
         fases_adm = df_adm_partidos['Fase'].unique()
-        fase_colors_adm = {fase: 'rgba(30, 144, 255, 0.12)' if idx % 2 == 0 else 'rgba(0, 0, 0, 0)' for idx, fase in enumerate(fases_adm)}
-        st.dataframe(df_adm_partidos.style.apply(lambda r: [f"background-color: {fase_colors_adm.get(r['Fase'], '')}" for _ in r], axis=1), use_container_width=True, hide_index=True, column_config={" ": st.column_config.ImageColumn(label=""), "  ": st.column_config.ImageColumn(label="")})
+        fase_colors_adm = {fase: 'rgba(30, 144, 255, 0.08)' if idx % 2 == 0 else 'rgba(0, 0, 0, 0)' for idx, fase in enumerate(fases_adm)}
+        st.dataframe(df_adm_partidos.style.apply(lambda r: [f"background-color: {fase_colors_adm.get(r['Fase'], '')}" for _ in r], axis=1), use_container_width=True, hide_index=True, column_config={
+            "id_partido": st.column_config.NumberColumn(label="ID"),
+            "Fase": st.column_config.TextColumn(label="Fase"),
+            "bandera_l": st.column_config.ImageColumn(label="🏳️"), 
+            "Local": st.column_config.TextColumn(label="Local"), 
+            "GL Real": st.column_config.NumberColumn(label="GL"), 
+            "GV Real": st.column_config.NumberColumn(label="GV"),
+            "Visitante": st.column_config.TextColumn(label="Visitante"),
+            "bandera_v": st.column_config.ImageColumn(label="🏳️")
+        })
     else:
         if pass_input: st.error("Contraseña incorrecta.")
