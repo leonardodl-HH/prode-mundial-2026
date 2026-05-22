@@ -11,35 +11,111 @@ from datetime import datetime
 # --- CONFIGURACIÓN DE PÁGINA STREAMLIT ---
 st.set_page_config(page_title="Prode Mundial 2026", page_icon="⚽", layout="wide")
 
-# --- INYECCIÓN DE DISEÑO: FONDO BLANCO PROFESIONAL Y FIJO ---
+# --- INYECCIÓN DE DISEÑO ABSOLUTO: MODO CLARO PROFESIONAL Y ULTRA LEGIBLE ---
 st.markdown("""
     <style>
-    [data-testid="stAppViewContainer"] {
+    /* Fondo global de la aplicación */
+    .stApp, [data-testid="stAppViewContainer"] {
         background-color: #FFFFFF !important;
-        color: #1E1E1E !important;
+        color: #1F2937 !important;
     }
-    [data-testid="stHeader"] {
-        background-color: rgba(255, 255, 255, 0) !important;
+    
+    /* Forzado de color oscuro para textos de lectura, títulos y etiquetas */
+    h1, h2, h3, h4, h5, h6, p, span, label, li, small {
+        color: #1F2937 !important;
     }
-    h1, h2, h3, h4, h5, h6, p, span, label, div {
-        color: #1E1E1E !important;
-    }
-    .stTabs [data-baseweb="tab-list"] {
+    
+    /* Estilización de casilleros de entrada de texto, números y contraseñas */
+    input, textarea {
         background-color: #F3F4F6 !important;
-        padding: 8px !important;
+        color: #1F2937 !important;
+        border: 1px solid #D1D5DB !important;
+    }
+    
+    /* Contenedores internos de los inputs de Streamlit */
+    div[data-baseweb="input"] {
+        background-color: #F3F4F6 !important;
+        border: 1px solid #D1D5DB !important;
+        border-radius: 6px !important;
+    }
+    
+    div[data-baseweb="input"] input {
+        background-color: transparent !important;
+        color: #1F2937 !important;
+    }
+    
+    /* Menús desplegables (Selectbox) corregidos */
+    div[data-baseweb="select"] > div {
+        background-color: #F3F4F6 !important;
+        color: #1F2937 !important;
+        border: 1px solid #D1D5DB !important;
+        border-radius: 6px !important;
+    }
+    
+    /* Texto seleccionado dentro de los desplegables */
+    div[data-testid="stSelectbox"] span, div[data-baseweb="select"] span {
+        color: #1F2937 !important;
+    }
+    
+    /* Botones de incremento y decremento de números (+ y -) */
+    div[data-testid="stNumberInput"] button {
+        background-color: #E5E7EB !important;
+        color: #1F2937 !important;
+        border: 1px solid #D1D5DB !important;
+    }
+    
+    /* Botones generales de acción de la plataforma (Color Azul Corporativo) */
+    button[data-testid="baseButton-secondary"], button[data-testid="baseButton-primary"] {
+        background-color: #007BFF !important;
+        color: #FFFFFF !important;
+        border: none !important;
+        border-radius: 6px !important;
+        font-weight: bold !important;
+        padding: 0.5rem 1rem !important;
+    }
+    
+    button[data-testid="baseButton-secondary"]:hover, button[data-testid="baseButton-primary"]:hover {
+        background-color: #0056B3 !important;
+        color: #FFFFFF !important;
+    }
+    
+    /* Caja de arrastre para subir archivos Excel */
+    div[data-testid="stFileUploader"] section {
+        background-color: #F9FAFB !important;
+        border: 2px dashed #CBD5E1 !important;
         border-radius: 8px !important;
     }
-    .stTabs [data-baseweb="tab"] {
-        color: #555555 !important;
+    
+    /* Pestañas del menú superior (Tabs) */
+    .stTabs [data-baseweb="tab-list"] {
+        background-color: #F3F4F6 !important;
+        padding: 6px !important;
+        border-radius: 8px !important;
     }
+    
+    .stTabs [data-baseweb="tab"] {
+        color: #4B5563 !important;
+        font-weight: 500 !important;
+    }
+    
     .stTabs [aria-selected="true"] {
         color: #007BFF !important;
         font-weight: bold !important;
+        background-color: #FFFFFF !important;
+        border-radius: 6px !important;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1) !important;
     }
+    
+    /* Menús desplegables informativos (Expanders) */
     div[data-testid="stExpander"] {
         background-color: #F9FAFB !important;
         border: 1px solid #E5E7EB !important;
         border-radius: 8px !important;
+    }
+    
+    /* Corrección del fondo de tablas de datos */
+    div[data-testid="stDataFrame"] {
+        background-color: #FFFFFF !important;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -290,9 +366,6 @@ class DatabaseManager:
 # --- INICIALIZACIÓN ---
 DatabaseManager.init_db()
 
-st.title("🏆 Prode Mundial 2026 — Dashboard en Vivo")
-st.markdown("Bienvenido al centro de estadísticas profesional. Sincronización en la nube nativa permanente.")
-
 tabs = st.tabs(["📊 Posiciones y Apuestas", "📤 Subir Mis Apuestas", "⚙️ Panel Administrador"])
 
 # ==========================================
@@ -323,7 +396,6 @@ with tabs[0]:
             fases_unicas = df_public_partidos['Fase'].unique()
             fase_colors = {fase: 'rgba(30, 144, 255, 0.08)' if idx % 2 == 0 else 'rgba(0, 0, 0, 0)' for idx, fase in enumerate(fases_unicas)}
             
-            # Encabezados re-alineados explícitamente usando emoticones en vez de strings vacíos
             st.dataframe(df_public_partidos.style.apply(lambda r: [f"background-color: {fase_colors.get(r['Fase'], '')}" for _ in r], axis=1), use_container_width=True, hide_index=True, column_config={
                 "id_partido": st.column_config.NumberColumn(label="ID"),
                 "Fase": st.column_config.TextColumn(label="Fase"),
