@@ -8,6 +8,9 @@ import io
 import os
 from datetime import datetime
 
+# --- CONFIGURACIÓN DE PÁGINA STREAMLIT ---
+st.set_page_config(page_title="Prode Mundial 2026", page_icon="⚽", layout="wide")
+
 # --- CONEXIÓN DE ARQUITECTURA PROFESIONAL (POSTGRESQL CLOUD) ---
 class DatabaseManager:
     @staticmethod
@@ -18,7 +21,6 @@ class DatabaseManager:
     def init_db():
         conn = DatabaseManager.get_connection()
         
-        # Lista de comandos secuenciales para la base de datos
         comandos_tablas = [
             '''CREATE TABLE IF NOT EXISTS equipos (id_equipo SERIAL PRIMARY KEY, nombre TEXT UNIQUE NOT NULL, zona TEXT NOT NULL, archivo_bandera TEXT DEFAULT 'default.png')''',
             '''CREATE TABLE IF NOT EXISTS partidos (id_partido SERIAL PRIMARY KEY, fase TEXT NOT NULL, id_equipo_local INTEGER, id_equipo_visitante INTEGER, goles_local INTEGER DEFAULT NULL, goles_visitante INTEGER DEFAULT NULL, FOREIGN KEY(id_equipo_local) REFERENCES equipos(id_equipo), FOREIGN KEY(id_equipo_visitante) REFERENCES equipos(id_equipo), UNIQUE(fase, id_equipo_local, id_equipo_visitante))''',
@@ -27,7 +29,6 @@ class DatabaseManager:
             '''CREATE TABLE IF NOT EXISTS configuracion (id INTEGER PRIMARY KEY, pts_prode INTEGER, pts_exacto INTEGER, pts_parcial INTEGER, pts_dif INTEGER, api_key TEXT, id_liga TEXT, admin_pass TEXT, pts_prode_ko INTEGER DEFAULT 8, pts_exacto_ko INTEGER DEFAULT 6, pts_parcial_ko INTEGER DEFAULT 2, pts_dif_ko INTEGER DEFAULT 2, fecha_limite TEXT DEFAULT '2026-06-11 16:00:00')'''
         ]
         
-        # --- CONTROL DE CONCURRENCIA: AISLAMIENTO DE CREACIÓN DE TABLAS ---
         for cmd in comandos_tablas:
             try:
                 cursor = conn.cursor()
@@ -35,9 +36,8 @@ class DatabaseManager:
                 conn.commit()
                 cursor.close()
             except Exception:
-                conn.rollback()  # Si otro hilo en paralelo ya creó la tabla, liberamos el recurso de forma limpia
+                conn.rollback()
         
-        # Inicialización atómica de configuración base
         try:
             cursor = conn.cursor()
             cursor.execute("""
@@ -50,7 +50,6 @@ class DatabaseManager:
         except Exception:
             conn.rollback()
         
-        # Carga e inyección inmortal de fixture libre de duplicados
         try:
             cursor = conn.cursor()
             cursor.execute("SELECT COUNT(*) FROM equipos")
@@ -126,14 +125,15 @@ class DatabaseManager:
         conn.close()
         return datos
 
+    # --- REPARADO PARA POSTGRESQL (COMILLAS DOBLES EN ALIAS) ---
     @staticmethod
     def get_partidos_con_nombres():
         conn = DatabaseManager.get_connection()
         cursor = conn.cursor()
         query = '''
             SELECT 
-                p.id_partido as id_partido, p.fase as Fase, el.archivo_bandera as [ ], el.nombre as Local, 
-                p.goles_local as [GL Real], p.goles_visitante as [GV Real], ev.nombre as Visitante, ev.archivo_bandera as [  ]
+                p.id_partido as "id_partido", p.fase as "Fase", el.archivo_bandera as " ", el.nombre as "Local", 
+                p.goles_local as "GL Real", p.goles_visitante as "GV Real", ev.nombre as "Visitante", ev.archivo_bandera as "  "
             FROM partidos p 
             JOIN equipos el ON p.id_equipo_local = el.id_equipo 
             JOIN equipos ev ON p.id_equipo_visitante = ev.id_equipo 
@@ -233,11 +233,12 @@ class DatabaseManager:
         conn.close()
         return df_rank
 
+    # --- REPARADO PARA POSTGRESQL (COMILLAS DOBLES EN ALIAS) ---
     @staticmethod
     def get_apuestas_usuario_web(nombre_usuario):
         conn = DatabaseManager.get_connection()
         cursor = conn.cursor()
-        query = '''SELECT p.fase as "Fase", el.archivo_bandera as [ ], a.equipo_l_predicho as "Local", a.apuesta_goles_local as "[GL Pred]", a.apuesta_goles_visitante as "[GV Pred]", a.equipo_v_predicho as "Visitante", ev.archivo_bandera as [  ], p.goles_local as "[GL Real]", p.goles_visitante as "[GV Real]", a.puntos_obtenidos as "[Pts Ganados]" FROM apuestas a JOIN usuarios u ON a.id_usuario = u.id_usuario JOIN partidos p ON a.id_partido = p.id_partido JOIN equipos el ON p.id_equipo_local = el.id_equipo JOIN equipos ev ON p.id_equipo_visitante = ev.id_equipo WHERE u.nombre = %s'''
+        query = '''SELECT p.fase as "Fase", el.archivo_bandera as " ", a.equipo_l_predicho as "Local", a.apuesta_goles_local as "GL Pred", a.apuesta_goles_visitante as "GV Pred", a.equipo_v_predicho as "Visitante", ev.archivo_bandera as "  ", p.goles_local as "GL Real", p.goles_visitante as "GV Real", a.puntos_obtenidos as "Pts Ganados" FROM apuestas a JOIN usuarios u ON a.id_usuario = u.id_usuario JOIN partidos p ON a.id_partido = p.id_partido JOIN equipos el ON p.id_equipo_local = el.id_equipo JOIN equipos ev ON p.id_equipo_visitante = ev.id_equipo WHERE u.nombre = %s'''
         cursor.execute(query, (nombre_usuario,))
         columns = [desc[0] for desc in cursor.description]
         df = pd.DataFrame(cursor.fetchall(), columns=columns)
@@ -287,7 +288,14 @@ with tabs[0]:
         if not df_public_partidos.empty:
             fases_unicas = df_public_partidos['Fase'].unique()
             fase_colors = {fase: 'rgba(30, 144, 255, 0.12)' if idx % 2 == 0 else 'rgba(0, 0, 0, 0)' for idx, fase in enumerate(fases_unicas)}
-            st.dataframe(df_public_partidos.style.apply(lambda r: [f"background-color: {fase_colors.get(r['Fase'], '')}" for _ in r], axis=1), use_container_width=True, hide_index=True, column_config={" ": st.column_config.ImageColumn(label=""), "  ": st.column_config.ImageColumn(label=""), "[GL Real]": st.column_config.NumberColumn(label="GL"), "[GV Real]": st.column_config.NumberColumn(label="GV")})
+            
+            # --- CORREGIDO: MAPEADO PRECISO DE COLUMNAS CON SUS NUEVAS ETIQUETAS DE POSTGRES ---
+            st.dataframe(df_public_partidos.style.apply(lambda r: [f"background-color: {fase_colors.get(r['Fase'], '')}" for _ in r], axis=1), use_container_width=True, hide_index=True, column_config={
+                " ": st.column_config.ImageColumn(label=""), 
+                "  ": st.column_config.ImageColumn(label=""), 
+                "GL Real": st.column_config.NumberColumn(label="GL"), 
+                "GV Real": st.column_config.NumberColumn(label="GV")
+            })
         else: st.info("El fixture todavía no fue generado.")
 
     st.markdown("---")
@@ -300,7 +308,10 @@ with tabs[0]:
                 df_user_ap = DatabaseManager.get_apuestas_usuario_web(user_sel)
                 if not df_user_ap.empty:
                     colors_usr = {fase: 'rgba(30, 144, 255, 0.12)' if idx % 2 == 0 else 'rgba(0, 0, 0, 0)' for idx, fase in enumerate(df_user_ap['Fase'].unique())}
-                    st.dataframe(df_user_ap.style.apply(lambda r: [f"background-color: {colors_usr.get(r['Fase'], '')}" for _ in r], axis=1), use_container_width=True, hide_index=True, column_config={" ": st.column_config.ImageColumn(label=""), "  ": st.column_config.ImageColumn(label="")})
+                    st.dataframe(df_user_ap.style.apply(lambda r: [f"background-color: {colors_usr.get(r['Fase'], '')}" for _ in r], axis=1), use_container_width=True, hide_index=True, column_config={
+                        " ": st.column_config.ImageColumn(label=""), 
+                        "  ": st.column_config.ImageColumn(label="")
+                    })
         else: st.info("Aún no hay usuarios cargados en el sistema.")
     else: st.warning(f"🔒 **Pronósticos Protegidos:** Las apuestas de todos se revelarán el **{cfg[11]}** para evitar copias.")
 
