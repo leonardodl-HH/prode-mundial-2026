@@ -20,6 +20,7 @@ class DatabaseManager:
     @staticmethod
     def init_db():
         conn = DatabaseManager.get_connection()
+        cursor = conn.cursor()
         
         comandos_tablas = [
             '''CREATE TABLE IF NOT EXISTS equipos (id_equipo SERIAL PRIMARY KEY, nombre TEXT UNIQUE NOT NULL, zona TEXT NOT NULL, archivo_bandera TEXT DEFAULT 'default.png')''',
@@ -112,7 +113,7 @@ class DatabaseManager:
     def set_config(p_prode, p_exact, p_parcial, p_dif, api_key, id_liga, admin_pass, p_prode_ko, p_exact_ko, p_parcial_ko, p_dif_ko, fecha_limite):
         conn = DatabaseManager.get_connection()
         cursor = conn.cursor()
-        cursor.execute("UPDATE configuracion SET pts_prode=%s, pts_exacto=%s, pts_parcial=%s, pts_dif=%s, api_key=%s, id_liga=%s, admin_pass=%s, pts_prode_ko=%s, pts_exacto_ko=%s, pts_parcial=%s, pts_dif=%s, fecha_limite=%s WHERE id=1", (p_prode, p_exact, p_parcial, p_dif, api_key, id_liga, admin_pass, p_prode_ko, p_exact_ko, p_parcial_ko, p_dif_ko, fecha_limite))
+        cursor.execute("UPDATE configuracion SET pts_prode=%s, pts_exacto=%s, pts_parcial=%s, pts_dif=%s, api_key=%s, id_liga=%s, admin_pass=%s, pts_prode_ko=%s, pts_exacto_ko=%s, pts_parcial_ko=%s, pts_dif_ko=%s, fecha_limite=%s WHERE id=1", (p_prode, p_exact, p_parcial, p_dif, api_key, id_liga, admin_pass, p_prode_ko, p_exact_ko, p_parcial_ko, p_dif_ko, fecha_limite))
         conn.commit()
         conn.close()
 
@@ -131,8 +132,8 @@ class DatabaseManager:
         cursor = conn.cursor()
         query = '''
             SELECT 
-                p.id_partido as "ID", p.fase as "Fase", el.archivo_bandera as "Local Flag", el.nombre as "Local", 
-                p.goles_local as "GL Real", p.goles_visitante as "GV Real", ev.nombre as "Visitante", ev.archivo_bandera as "Visitante Flag"
+                p.id_partido as "id_partido", p.fase as "Fase", el.archivo_bandera as "bandera_l", el.nombre as "Local", 
+                p.goles_local as "GL Real", p.goles_visitante as "GV Real", ev.nombre as "Visitante", ev.archivo_bandera as "bandera_v"
             FROM partidos p 
             JOIN equipos el ON p.id_equipo_local = el.id_equipo 
             JOIN equipos ev ON p.id_equipo_visitante = ev.id_equipo 
@@ -236,7 +237,7 @@ class DatabaseManager:
     def get_apuestas_usuario_web(nombre_usuario):
         conn = DatabaseManager.get_connection()
         cursor = conn.cursor()
-        query = '''SELECT p.fase as "Fase", el.archivo_bandera as "Local Flag", a.equipo_l_predicho as "Local", a.apuesta_goles_local as "GL Pred", a.apuesta_goles_visitante as "GV Pred", a.equipo_v_predicho as "Visitante", ev.archivo_bandera as "Visitante Flag", p.goles_local as "GL Real", p.goles_visitante as "GV Real", a.puntos_obtenidos as "Pts Ganados" FROM apuestas a JOIN usuarios u ON a.id_usuario = u.id_usuario JOIN partidos p ON a.id_partido = p.id_partido JOIN equipos el ON p.id_equipo_local = el.id_equipo JOIN equipos ev ON p.id_equipo_visitante = ev.id_equipo WHERE u.nombre = %s'''
+        query = '''SELECT p.fase as "Fase", el.archivo_bandera as "bandera_l", a.equipo_l_predicho as "Local", a.apuesta_goles_local as "GL Pred", a.apuesta_goles_visitante as "GV Pred", a.equipo_v_predicho as "Visitante", ev.archivo_bandera as "bandera_v", p.goles_local as "GL Real", p.goles_visitante as "GV Real", a.puntos_obtenidos as "Pts Ganados" FROM apuestas a JOIN usuarios u ON a.id_usuario = u.id_usuario JOIN partidos p ON a.id_partido = p.id_partido JOIN equipos el ON p.id_equipo_local = el.id_equipo JOIN equipos ev ON p.id_equipo_visitante = ev.id_equipo WHERE u.nombre = %s'''
         cursor.execute(query, (nombre_usuario,))
         columns = [desc[0] for desc in cursor.description]
         df = pd.DataFrame(cursor.fetchall(), columns=columns)
@@ -254,8 +255,12 @@ class DatabaseManager:
         conn.close()
         return df
 
-# --- CONTROLADORES ---
+# --- INICIALIZACIÓN DE LA BASE DE DATOS CLOUD ---
 DatabaseManager.init_db()
+
+# --- RENDERIZADO DEL ENCABEZADO DE LA PÁGINA (RESTAURADO) ---
+st.title("🏆 Prode Mundial 2026 — Dashboard en Vivo")
+st.markdown("Bienvenido al centro de estadísticas oficial. Sincronización en la nube nativa permanente.")
 
 tabs = st.tabs(["📊 Posiciones y Apuestas", "📤 Subir Mis Apuestas", "⚙️ Panel Administrador"])
 
@@ -266,6 +271,7 @@ with tabs[0]:
     cfg = DatabaseManager.get_config()
     with st.expander("📜 Ver Reglamento y Sistema de Puntuación"):
         st.subheader("📝 Cálculo de Puntos Automático")
+        st.write("Los ítems suman de forma independiente según la fase del torneo:")
         col_r1, col_r2 = st.columns(2)
         with col_r1: st.markdown(f"**🏟️ Fase de Grupos:**\n* Ganador/Empate: **+{cfg[0]} Pts**\n* Exacto: **+{cfg[1]} Pts**\n* Goles de un equipo: **+{cfg[2]} Pts**\n* Diferencia de goles: **+{cfg[3]} Pts**")
         with col_r2: st.markdown(f"**⚔️ Segunda Vuelta (KO):**\n* Ganador KO: **+{cfg[7]} Pts**\n* Exacto KO: **+{cfg[8]} Pts**\n* Goles KO: **+{cfg[9]} Pts**\n* Diferencia KO: **+{cfg[10]} Pts**")
@@ -283,16 +289,15 @@ with tabs[0]:
         st.subheader("📅 Fixture y Resultados Oficiales")
         df_public_partidos = DatabaseManager.get_partidos_con_nombres()
         if not df_public_partidos.empty:
-            # RENDERIZADO TOTALMENTE NATIVO CON ENCABEZADOS ASIGNADOS
             st.dataframe(df_public_partidos, use_container_width=True, hide_index=True, column_config={
-                "ID": st.column_config.NumberColumn(label="ID"),
+                "id_partido": st.column_config.NumberColumn(label="ID"),
                 "Fase": st.column_config.TextColumn(label="Fase"),
-                "Local Flag": st.column_config.ImageColumn(label="🏳️"), 
+                "bandera_l": st.column_config.ImageColumn(label="🏳️"), 
                 "Local": st.column_config.TextColumn(label="Local"), 
                 "GL Real": st.column_config.NumberColumn(label="GL"), 
                 "GV Real": st.column_config.NumberColumn(label="GV"),
                 "Visitante": st.column_config.TextColumn(label="Visitante"),
-                "Visitante Flag": st.column_config.ImageColumn(label="🏳️")
+                "bandera_v": st.column_config.ImageColumn(label="🏳️")
             })
         else: st.info("El fixture todavía no fue generado.")
 
@@ -307,12 +312,12 @@ with tabs[0]:
                 if not df_user_ap.empty:
                     st.dataframe(df_user_ap, use_container_width=True, hide_index=True, column_config={
                         "Fase": st.column_config.TextColumn(label="Fase"),
-                        "Local Flag": st.column_config.ImageColumn(label="🏳️"),
+                        "bandera_l": st.column_config.ImageColumn(label="🏳️"),
                         "Local": st.column_config.TextColumn(label="Local"),
                         "GL Pred": st.column_config.NumberColumn(label="GL Pred"),
                         "GV Pred": st.column_config.NumberColumn(label="GV Pred"),
                         "Visitante": st.column_config.TextColumn(label="Visitante"),
-                        "Visitante Flag": st.column_config.ImageColumn(label="🏳️"),
+                        "bandera_v": st.column_config.ImageColumn(label="🏳️"),
                         "GL Real": st.column_config.NumberColumn(label="GL Real"),
                         "GV Real": st.column_config.NumberColumn(label="GV Real"),
                         "Pts Ganados": st.column_config.NumberColumn(label="Pts Ganados")
@@ -348,7 +353,7 @@ with tabs[1]:
             if prev_fase and r['Fase'] != prev_fase:
                 for col_num in range(1, 7): ws.cell(row=row_num-1, column=col_num).border = thick_bot
             ws.row_dimensions[row_num].height = 24
-            ws.cell(row=row_num, column=1, value=r['ID']).alignment = Alignment(horizontal="center")
+            ws.cell(row=row_num, column=1, value=r['id_partido']).alignment = Alignment(horizontal="center")
             ws.cell(row=row_num, column=2, value=r['Fase']).alignment = Alignment(horizontal="center")
             ws.cell(row=row_num, column=3, value=r['Local'])
             ws.cell(row=row_num, column=6, value=r['Visitante'])
@@ -377,13 +382,14 @@ with tabs[1]:
     else: st.warning("El fixture no fue generado aún.")
 
 # ==========================================
-# TAB 3: PANEL ADMINISTRADOR (ORDENADO CRONOLÓGICO)
+# TAB 3: PANEL ADMINISTRADOR
 # ==========================================
 with tabs[2]:
     cfg = DatabaseManager.get_config()
     pass_input = st.text_input("Ingresa la Contraseña de Administrador:", type="password")
     if pass_input == cfg[6]:
         st.success("Conexión Segura con PostgreSQL Cloud En Línea")
+        thin_b = Border(left=Side(style='thin', color='D3D3D3'), right=Side(style='thin', color='D3D3D3'), top=Side(style='thin', color='D3D3D3'), bottom=Side(style='thin', color='D3D3D3'))
         
         st.markdown("### 📊 Informes de Auditoría de Producción")
         df_auditoria = DatabaseManager.obtener_datos_auditoria_puntos()
@@ -442,7 +448,7 @@ with tabs[2]:
                             if f["fixture"]["status"]["short"] in ["FT", "AET", "PEN"]:
                                 al, av, gl, gv = f["teams"]["home"]["name"].lower(), f["teams"]["away"]["name"].lower(), f["goals"]["home"], f["goals"]["away"]
                                 for idx, row in df_p.iterrows():
-                                    if al in row['Local'].lower() and av in row['Visitante'].lower(): DatabaseManager.guardar_resultado(int(row['ID']), gl, gv); count += 1
+                                    if al in row['Local'].lower() and av in row['Visitante'].lower(): DatabaseManager.guardar_resultado(int(row['id_partido']), gl, gv); count += 1
                         st.success(f"¡Sincronización terminada! {count} partidos actualizados."); st.rerun()
                     except Exception as e: st.error(f"Error de API: {e}")
         with col_res2:
@@ -456,7 +462,7 @@ with tabs[2]:
                 
                 row_n = 6
                 for _, r in df_actual_goles.iterrows():
-                    ws_adm_res.cell(row=row_n, column=1, value=r['ID'])
+                    ws_adm_res.cell(row=row_n, column=1, value=r['id_partido'])
                     ws_adm_res.cell(row=row_n, column=2, value=r['Fase'])
                     ws_adm_res.cell(row=row_n, column=3, value=r['Local'])
                     ws_adm_res.cell(row=row_n, column=4, value="" if pd.isna(r['GL Real']) else int(r['GL Real']))
@@ -473,8 +479,6 @@ with tabs[2]:
                     except Exception as e: st.error(f"Error procesando el Excel: {e}")
         
         st.markdown("---")
-        
-        # DISTRIBUCIÓN VERTICAL PARA EVITAR RECORTES DE COMPONENTES
         st.markdown("### ⚙️ Configuración del Sistema de Puntuación")
         col_pts1, col_pts2 = st.columns(2)
         with col_pts1:
@@ -516,14 +520,14 @@ with tabs[2]:
         df_adm_partidos = DatabaseManager.get_partidos_con_nombres()
         if not df_adm_partidos.empty:
             st.dataframe(df_adm_partidos, use_container_width=True, hide_index=True, column_config={
-                "ID": st.column_config.NumberColumn(label="ID"),
+                "id_partido": st.column_config.NumberColumn(label="ID"),
                 "Fase": st.column_config.TextColumn(label="Fase"),
-                "Local Flag": st.column_config.ImageColumn(label="🏳️"), 
+                "bandera_l": st.column_config.ImageColumn(label="🏳️"), 
                 "Local": st.column_config.TextColumn(label="Local"), 
                 "GL Real": st.column_config.NumberColumn(label="GL"), 
                 "GV Real": st.column_config.NumberColumn(label="GV"),
                 "Visitante": st.column_config.TextColumn(label="Visitante"),
-                "Visitante Flag": st.column_config.ImageColumn(label="🏳️")
+                "bandera_v": st.column_config.ImageColumn(label="🏳️")
             })
     else:
         if pass_input: st.error("Contraseña incorrecta.")
