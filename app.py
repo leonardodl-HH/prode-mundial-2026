@@ -11,6 +11,67 @@ from datetime import datetime
 # --- CONFIGURACIÓN DE PÁGINA STREAMLIT ---
 st.set_page_config(page_title="Prode Mundial 2026", page_icon="⚽", layout="wide")
 
+# --- CONTROL DIRECTO DE VARIABLES DEL SISTEMA (FUERZA MODO CLARO ORIGINAL) ---
+st.markdown("""
+    <style>
+    :root {
+        --background-color: #FFFFFF;
+        --primary-color: #007BFF;
+        --secondary-background-color: #F1F5F9;
+        --text-color: #1F2937;
+    }
+    
+    /* Contenedor principal limpio */
+    .stApp, [data-testid="stAppViewContainer"], [data-testid="stHeader"] {
+        background-color: #FFFFFF !important;
+        color: #1F2937 !important;
+    }
+    
+    /* Forzado de color de fuentes */
+    h1, h2, h3, h4, h5, h6, p, span, label, li, small {
+        color: #1F2937 !important;
+    }
+    
+    /* Estilización homogénea de campos de entrada (Evita bloques negros) */
+    .stTextInput input, .stNumberInput input, .stPasswordInput input, div[data-baseweb="select"] > div {
+        background-color: #F8FAFC !important;
+        color: #1F2937 !important;
+        border: 1px solid #E2E8F0 !important;
+    }
+    
+    /* Botones de acción limpios (Texto blanco sobre fondo azul) */
+    button[data-testid="baseButton-secondary"], button[data-testid="baseButton-primary"] {
+        background-color: #007BFF !important;
+        color: #FFFFFF !important;
+        border: none !important;
+        border-radius: 4px !important;
+        font-weight: 600 !important;
+    }
+    
+    button[data-testid="baseButton-secondary"]:hover, button[data-testid="baseButton-primary"]:hover {
+        background-color: #0056B3 !important;
+        color: #FFFFFF !important;
+    }
+    
+    /* Pestañas de navegación superiores */
+    .stTabs [data-baseweb="tab-list"] {
+        background-color: #F1F5F9 !important;
+        padding: 4px !important;
+        border-radius: 6px !important;
+    }
+    
+    .stTabs [data-baseweb="tab"] {
+        color: #64748B !important;
+    }
+    
+    .stTabs [aria-selected="true"] {
+        color: #007BFF !important;
+        background-color: #FFFFFF !important;
+        border-radius: 4px !important;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
 # --- CONEXIÓN DE ARQUITECTURA PROFESIONAL (POSTGRESQL CLOUD) ---
 class DatabaseManager:
     @staticmethod
@@ -39,6 +100,18 @@ class DatabaseManager:
             except Exception:
                 conn.rollback()
         
+        # --- LIMPIADOR AUTOMÁTICO DE SEGURIDAD (MIGRACIÓN DE FIXTURE VIEJO) ---
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM equipos WHERE nombre = 'Costa Rica'")
+            if cursor.fetchone()[0] > 0:
+                # Si existía el borrador viejo, resetea las tablas para inyectar tus grupos reales sin errores
+                cursor.execute("TRUNCATE apuestas, partidos, equipos, usuarios RESTART IDENTITY CASCADE;")
+                conn.commit()
+            cursor.close()
+        except Exception:
+            conn.rollback()
+
         try:
             cursor = conn.cursor()
             cursor.execute("""
@@ -55,21 +128,34 @@ class DatabaseManager:
             cursor = conn.cursor()
             cursor.execute("SELECT COUNT(*) FROM equipos")
             if cursor.fetchone()[0] == 0:
+                # INYECCIÓN EXACTA DE TUS GRUPOS DEL MUNDIAL CHAT POR CHAT
                 mapa_grupos = {
-                    "A": ["México", "Estados Unidos", "Canadá", "Costa Rica"], "B": ["Argentina", "Brasil", "Uruguay", "Colombia"],
-                    "C": ["Francia", "Inglaterra", "España", "Alemania"], "D": ["Portugal", "Italia", "Países Bajos", "Bélgica"],
-                    "E": ["Croacia", "Marruecos", "Japón", "Senegal"], "F": ["Ecuador", "Perú", "Chile", "Paraguay"],
-                    "G": ["Ghana", "Camerún", "Túnez", "Argelia"], "H": ["Corea del Sur", "Australia", "Irán", "Arabia Saudita"],
-                    "I": ["Jamaica", "Panamá", "Honduras", "El Salvador"], "J": ["Nigeria", "Costa de Marfil", "Egipto", "Mali"],
-                    "K": ["Suiza", "Dinamarca", "Serbia", "Ucrania"], "L": ["Polonia", "Suecia", "Escocia", "Gales"]
+                    "A": ["México", "Sudáfrica", "Corea del Sur", "Rep. Checa"],
+                    "B": ["Canadá", "Bosnia", "Qatar", "Suiza"],
+                    "C": ["Brasil", "Marruecos", "Haití", "Escocia"],
+                    "D": ["EE.UU.", "Paraguay", "Australia", "Turquía"],
+                    "E": ["Alemania", "Curazao", "C. Marfil", "Ecuador"],
+                    "F": ["Países Bajos", "Japón", "Suecia", "Túnez"],
+                    "G": ["Bélgica", "Egipto", "Irán", "N. Zelanda"],
+                    "H": ["España", "C. Verde", "A. Saudita", "Uruguay"],
+                    "I": ["Francia", "Senegal", "Irak", "Noruega"],
+                    "J": ["Argentina", "Argelia", "Austria", "Jordania"],
+                    "K": ["Portugal", "RD Congo", "Uzbekistán", "Colombia"],
+                    "L": ["Inglaterra", "Croacia", "Ghana", "Panamá"]
                 }
                 iso_mapping = {
-                    "México": "mx", "Estados Unidos": "us", "Canadá": "ca", "Costa Rica": "cr", "Argentina": "ar", "Brasil": "br", "Uruguay": "uy", "Colombia": "co",
-                    "Francia": "fr", "Inglaterra": "gb-eng", "España": "es", "Alemania": "de", "Portugal": "pt", "Italia": "it", "Países Bajos": "nl", "Bélgica": "be",
-                    "Croacia": "hr", "Marruecos": "ma", "Japón": "jp", "Senegal": "sn", "Ecuador": "ec", "Perú": "pe", "Chile": "cl", "Paraguay": "py",
-                    "Ghana": "gh", "Camerún": "cm", "Túnez": "tn", "Argelia": "dz", "Corea del Sur": "kr", "Australia": "au", "Irán": "ir", "Arabia Saudita": "sa",
-                    "Jamaica": "jm", "Panamá": "pa", "Honduras": "hn", "El Salvador": "sv", "Nigeria": "ng", "Costa de Marfil": "ci", "Egipto": "eg", "Mali": "ml",
-                    "Suiza": "ch", "Dinamarca": "dk", "Serbia": "rs", "Ucrania": "ua", "Polonia": "pl", "Suecia": "se", "Escocia": "gb-sct", "Gales": "gb-wls"
+                    "México": "mx", "Sudáfrica": "za", "Corea del Sur": "kr", "Rep. Checa": "cz",
+                    "Canadá": "ca", "Bosnia": "ba", "Qatar": "qa", "Suiza": "ch",
+                    "Brasil": "br", "Marruecos": "ma", "Haití": "ht", "Escocia": "gb-sct",
+                    "EE.UU.": "us", "Paraguay": "py", "Australia": "au", "Turquía": "tr",
+                    "Alemania": "de", "Curazao": "cw", "C. Marfil": "ci", "Ecuador": "ec",
+                    "Países Bajos": "nl", "Japón": "jp", "Suecia": "se", "Túnez": "tn",
+                    "Bélgica": "be", "Egipto": "eg", "Irán": "ir", "N. Zelanda": "nz",
+                    "España": "es", "C. Verde": "cv", "A. Saudita": "sa", "Uruguay": "uy",
+                    "Francia": "fr", "Senegal": "sn", "Irak": "iq", "Noruega": "no",
+                    "Argentina": "ar", "Argelia": "dz", "Austria": "at", "Jordania": "jo",
+                    "Portugal": "pt", "RD Congo": "cd", "Uzbekistán": "uz", "Colombia": "co",
+                    "Inglaterra": "gb-eng", "Croacia": "hr", "Ghana": "gh", "Panamá": "pa"
                 }
                 for grupo, selecciones in mapa_grupos.items():
                     for sel in selecciones:
@@ -255,10 +341,10 @@ class DatabaseManager:
         conn.close()
         return df
 
-# --- INICIALIZACIÓN DE LA BASE DE DATOS CLOUD ---
+# --- INICIALIZACIÓN DE LA APLICACIÓN ---
 DatabaseManager.init_db()
 
-# --- RENDERIZADO DEL ENCABEZADO DE LA PÁGINA (RESTAURADO) ---
+# --- RENDERIZADO DEL TITULO SUPERIOR (RESTAURADO DEFINITIVO) ---
 st.title("🏆 Prode Mundial 2026 — Dashboard en Vivo")
 st.markdown("Bienvenido al centro de estadísticas oficial. Sincronización en la nube nativa permanente.")
 
@@ -271,7 +357,6 @@ with tabs[0]:
     cfg = DatabaseManager.get_config()
     with st.expander("📜 Ver Reglamento y Sistema de Puntuación"):
         st.subheader("📝 Cálculo de Puntos Automático")
-        st.write("Los ítems suman de forma independiente según la fase del torneo:")
         col_r1, col_r2 = st.columns(2)
         with col_r1: st.markdown(f"**🏟️ Fase de Grupos:**\n* Ganador/Empate: **+{cfg[0]} Pts**\n* Exacto: **+{cfg[1]} Pts**\n* Goles de un equipo: **+{cfg[2]} Pts**\n* Diferencia de goles: **+{cfg[3]} Pts**")
         with col_r2: st.markdown(f"**⚔️ Segunda Vuelta (KO):**\n* Ganador KO: **+{cfg[7]} Pts**\n* Exacto KO: **+{cfg[8]} Pts**\n* Goles KO: **+{cfg[9]} Pts**\n* Diferencia KO: **+{cfg[10]} Pts**")
@@ -389,7 +474,6 @@ with tabs[2]:
     pass_input = st.text_input("Ingresa la Contraseña de Administrador:", type="password")
     if pass_input == cfg[6]:
         st.success("Conexión Segura con PostgreSQL Cloud En Línea")
-        thin_b = Border(left=Side(style='thin', color='D3D3D3'), right=Side(style='thin', color='D3D3D3'), top=Side(style='thin', color='D3D3D3'), bottom=Side(style='thin', color='D3D3D3'))
         
         st.markdown("### 📊 Informes de Auditoría de Producción")
         df_auditoria = DatabaseManager.obtener_datos_auditoria_puntos()
@@ -437,7 +521,7 @@ with tabs[2]:
         st.markdown("### 🔄 Carga de Resultados Oficiales del Torneo")
         col_res1, col_res2 = st.columns(2)
         with col_res1:
-            st.markdown("##### 🌐 Opción Principal: Sincronización Automática")
+            st.markdown("##### 🌐 Sincronización Automática")
             if st.button("🔄 Sincronizar Resultados vía API Now", use_container_width=True):
                 if not cfg[4]: st.error("Error: Falta tu API Key.")
                 else:
@@ -452,7 +536,7 @@ with tabs[2]:
                         st.success(f"¡Sincronización terminada! {count} partidos actualizados."); st.rerun()
                     except Exception as e: st.error(f"Error de API: {e}")
         with col_res2:
-            st.markdown("##### 📂 Opción Secundaria: Contingencia Manual por Excel")
+            st.markdown("##### 📂 Contingencia Manual por Excel")
             df_actual_goles = DatabaseManager.get_partidos_con_nombres()
             if not df_actual_goles.empty:
                 wb_adm_res = openpyxl.Workbook(); ws_adm_res = wb_adm_res.active; ws_adm_res.title = "Resultados"; ws_adm_res.views.sheetView[0].showGridLines = True
